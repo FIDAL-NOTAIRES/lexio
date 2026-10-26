@@ -1,0 +1,9 @@
+{
+  "name": "lexio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LEXIO — contrôle des projets d'actes reçus du confrère (FIDAL Notaires Paris)",
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4"
+  }
+}

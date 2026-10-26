@@ -1,0 +1,6 @@
+{
+  "regions": ["cdg1"],
+  "functions": {
+    "api/lexio.js": { "maxDuration": 300 }
+  }
+}
