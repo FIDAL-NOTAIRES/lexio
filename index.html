@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>LEXIO — relecture des projets du confrère</title>
-<!-- LEXIO 1.0 — premier passage (demandes, ajouts non demandés, chiffres) + mail de retour.
-     Le second passage (clausier MONETA par le relais de MORNING) arrive au lot 2. -->
+<!-- LEXIO 2.0 — premier passage (demandes, ajouts non demandés, chiffres), second passage (clauses étoiles du clausier
+     MONETA lues par le relais de MORNING, feux selon la position de l'étude), projet annoté en suivi des révisions,
+     mail de synthèse. Arbitrages du 26/10/2026 (lot 1) et du 27/10/2026 (lot 2). -->
 <style>
 :root{
   --nuit:#0F2238; --canard:#33838B; --orange:#FF982D; --carmin:#A01040; --cyan:#6DD5DC; --jaune:#FFC900;
@@ -93,6 +94,16 @@ h3.bloc small{font:14px var(--corps);color:var(--gris);margin-left:8px}
 .point blockquote{margin:6px 0 0;padding:6px 12px;border-left:2px solid var(--filet);color:#33475A;font:15px/1.5 var(--titre);background:var(--voile)}
 .vide{color:var(--gris);font-style:italic;margin:6px 0}
 .attente{border:1px dashed #AFC0CC;border-radius:4px;padding:12px 14px;color:var(--gris);font-size:15px;margin-top:18px}
+/* lot 2 : cases « à reprendre », second passage, projet annoté */
+.point .retenir{display:flex;gap:8px;align-items:center;margin-top:6px;font-size:14px;color:var(--gris);cursor:pointer;width:max-content}
+.point .retenir input{accent-color:var(--carmin);width:17px;height:17px}
+.point .rubrique{font-size:13px;color:var(--gris);margin-bottom:2px}
+.second-etat{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:8px 0 4px;color:var(--gris);font-size:15px}
+.bilan-clausier{font-size:14px;color:var(--gris);margin:4px 0 0}
+.annote{border:1px solid var(--filet);border-radius:4px;padding:14px 16px;margin-top:22px;background:var(--voile)}
+.annote h3{font:400 18px/1.3 var(--titre);margin:0 0 4px}
+.annote p{margin:4px 0;font-size:15px}
+.annote ul{margin:6px 0 0;padding-left:20px;font-size:14px;color:var(--gris)}
 
 .mail label.champ{margin-bottom:12px}
 .mail textarea{width:100%;min-height:320px;border:1px solid var(--filet);border-radius:3px;padding:12px;font:15px/1.6 var(--corps)}
@@ -128,7 +139,7 @@ h3.bloc small{font:14px var(--corps);color:var(--gris);margin-left:8px}
   <div class="tete-in">
     <h1 class="marque">LE<span>X</span>IO</h1>
     <p class="devise">Relecture des projets reçus du confrère</p>
-    <span class="version">version 1.0</span>
+    <span class="version">version 2.0</span>
   </div>
 </header>
 
@@ -219,7 +230,16 @@ h3.bloc small{font:14px var(--corps);color:var(--gris);margin-left:8px}
   <section class="etape" id="etape-releve" hidden>
     <h2><span class="num">3</span>Le relevé</h2>
     <div id="releve"></div>
-    <div class="attente">Second passage, la confrontation des clauses au clausier MONETA selon votre position, arrive avec la prochaine version.</div>
+    <div id="second"></div>
+    <div class="annote" id="annote">
+      <h3>Le projet annoté</h3>
+      <p id="annote-aide">Les points cochés ci-dessus sont portés dans le Word du confrère, en suivi des révisions à votre nom. Vous relisez dans Word avant de le joindre au mail.</p>
+      <div class="actions" style="margin-top:10px">
+        <button class="bouton fort" id="preparer-annote">Préparer le projet annoté</button>
+        <span class="etat" id="etat-annote"></span>
+      </div>
+      <ul id="annote-detail"></ul>
+    </div>
     <div class="actions">
       <button class="bouton fort" id="preparer-mail">Préparer le mail au confrère</button>
       <button class="bouton" onclick="window.print()">Imprimer le relevé</button>
@@ -257,6 +277,7 @@ h3.bloc small{font:14px var(--corps);color:var(--gris);margin-left:8px}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/lecture.js"></script>
+<script src="/revisions.js"></script>
 <script>
 'use strict';
 var $ = function (id) { return document.getElementById(id); };
@@ -384,7 +405,7 @@ function lirePiece(f) {
         return { genre: 'mail', nom: nom, texte: (m.objet ? 'Objet : ' + m.objet + '\n\n' : '') + (m.texte || ''), mail: m };
       });
     }
-    if (/\.docx$/i.test(nom) || (oct[0] === 0x50 && oct[1] === 0x4B)) return lireDocx(buf).then(function (r) { r.genre = 'docx'; r.nom = nom; return r; });
+    if (/\.docx$/i.test(nom) || (oct[0] === 0x50 && oct[1] === 0x4B)) return lireDocx(buf).then(function (r) { r.genre = 'docx'; r.nom = nom; r.buf = buf; return r; });
     if (/\.pdf$/i.test(nom) || (oct[0] === 0x25 && oct[1] === 0x50)) return lirePdf(buf).then(function (r) { r.genre = 'pdf'; r.nom = nom; return r; });
     if (/\.doc$/i.test(nom)) throw new Error('Ancien format Word (.doc) : enregistrez-le en .docx.');
     throw new Error('Format non reconnu : déposez un .msg, .eml, .docx ou .pdf.');
@@ -498,12 +519,19 @@ $('examiner').addEventListener('click', function () {
     .catch(function (x) { $('erreur-demandes').textContent = x.message; }).then(finTravail);
 });
 function el(tag, classe, texte) { var e = document.createElement(tag); if (classe) e.className = classe; if (texte != null) e.textContent = texte; return e; }
-function point(couleur, num, etiquette, titre, explic, extrait) {
+function point(couleur, num, etiquette, titre, explic, extrait, choix, rubrique) {
   var p = el('div', 'point ' + couleur), m = el('div', 'marge', num), c = el('div');
+  if (rubrique) c.appendChild(el('div', 'rubrique', rubrique));
   c.appendChild(el('div', 'verdict', etiquette));
   if (titre) c.appendChild(el('div', 'demande', titre));
   if (explic) c.appendChild(el('p', 'explic', explic));
   if (extrait) c.appendChild(el('blockquote', null, '« ' + extrait + ' »'));
+  if (choix) {   // case « à reprendre » : entre dans le projet annoté et dans la synthèse du mail
+    var l = el('label', 'retenir'), cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!choix.coche;
+    cb.addEventListener('change', function () { choix.objet.retenue = cb.checked; etat.annote = null; majAnnote(); });
+    choix.objet.retenue = cb.checked;
+    l.appendChild(cb); l.appendChild(document.createTextNode('À reprendre dans le projet et le mail')); c.appendChild(l);
+  }
   p.appendChild(m); p.appendChild(c); return p;
 }
 function dessinerReleve() {
@@ -523,7 +551,10 @@ function dessinerReleve() {
   if (r.synthese) z.appendChild(el('p', 'synthese', r.synthese));
 
   var h = el('h3', 'bloc', 'Vos demandes'); z.appendChild(h);
-  lignes.forEach(function (l) { var v = VERDICTS[l.etat] || VERDICTS.incertaine; z.appendChild(point(v[0], l.n, v[1], l.texte, l.explication, l.extrait)); });
+  lignes.forEach(function (l) {
+    var v = VERDICTS[l.etat] || VERDICTS.incertaine, a = l.etat === 'oubliee' || l.etat === 'partielle';
+    z.appendChild(point(v[0], l.n, v[1], l.texte, l.explication, l.extrait, l.etat === 'integree' ? null : { objet: l, coche: a }));
+  });
 
   h = el('h3', 'bloc', 'Ajouts non demandés'); h.appendChild(el('small', null, etat.prec ? 'comparés à la version précédente' : 'repérés par les modifications suivies et vos observations')); z.appendChild(h);
   if (!ajouts.length) z.appendChild(el('p', 'vide', etat.prec ? 'Aucun ajout non demandé repéré.' : 'Aucun ajout repéré. Sans la version précédente, seuls les ajouts visibles (modifications suivies) peuvent être établis.'));
@@ -537,13 +568,18 @@ function dessinerReleve() {
   if (!(r.chiffres || []).length) z.appendChild(el('p', 'vide', 'Aucun montant ni date à rapprocher.'));
   (r.chiffres || []).forEach(function (x, i) { z.appendChild(point(x.etat === 'ecart' ? 'rouge' : 'vert', 'C' + (i + 1), x.etat === 'ecart' ? 'Écart' : 'Concorde', x.objet, [x.valeurs, x.explication].filter(Boolean).join(' — '), '')); });
 
-  etat.releve = { feu: feu, demandes: lignes, ajouts: ajouts, chiffres: r.chiffres || [], synthese: r.synthese || '' };
+  etat.releve = { feu: feu, feu_premier: feu, demandes: lignes, ajouts: ajouts, chiffres: r.chiffres || [], synthese: r.synthese || '', clauses: [] };
+  etat.annote = null; etat.releveId = null; etat.enreg = null;
+  secondPassage();
 }
-function enregistrer() {
+/* les enregistrements se suivent : le second (clauses du second passage) complète la ligne créée par le premier */
+function enregistrer() { etat.enreg = (etat.enreg || Promise.resolve()).then(enregistrerMaintenant, enregistrerMaintenant); return etat.enreg; }
+function enregistrerMaintenant() {
   $('etat-enregistrement').textContent = 'Enregistrement du relevé…';
   var c = commun(); c.action = 'enregistrer'; c.releve = etat.releve; c.auteur = $('auteur').value.trim();
   c.confrere_nom = $('confrere-nom').value.trim(); c.confrere_adresse = $('confrere-adresse').value.trim();
-  api(c).then(function (r) { $('etat-enregistrement').textContent = r.enregistre ? 'Relevé enregistré.' : r.motif; })
+  if (etat.releveId) c.id = etat.releveId;
+  return api(c).then(function (r) { if (r.enregistre && r.id) etat.releveId = r.id; $('etat-enregistrement').textContent = r.enregistre ? 'Relevé enregistré.' : r.motif; })
     .catch(function (x) { $('etat-enregistrement').textContent = 'Relevé non enregistré : ' + x.message; });
 }
 
@@ -555,7 +591,10 @@ $('preparer-mail').addEventListener('click', function () {
   var r = etat.releve;
   c.releve = { position: c.position, demandes: r.demandes.map(function (d) { return { n: d.n, demande: d.texte, etat: d.etat, explication: d.explication }; }),
     ajouts: r.ajouts.map(function (a) { return { objet: a.objet, explication: a.explication, profite_a: a.profite_a, inacceptable: a.couleur === 'rouge' }; }),
-    chiffres: r.chiffres.filter(function (x) { return x.etat === 'ecart'; }) };
+    chiffres: r.chiffres.filter(function (x) { return x.etat === 'ecart'; }),
+    clauses: (r.clauses || []).filter(function (x) { return x.retenue; }).map(function (x) { return { objet: x.titre, constat: x.explication }; }),
+    modifications_portees_dans_le_projet_joint: !!etat.annote };
+  c.releve.demandes = c.releve.demandes.filter(function (d, i) { var l = r.demandes[i]; return d.etat === 'integree' || !l || l.retenue !== false; });
   api(c).then(function (m) {
     $('mail-objet').value = m.objet || ('Projet ' + c.dossier + ' — nos observations');
     $('mail-corps').value = m.corps || '';
@@ -576,10 +615,221 @@ $('copier-mail').addEventListener('click', function () { copier($('mail-corps').
 $('nouvel-examen').addEventListener('click', function () {
   ['depot-obs', 'depot-projet', 'depot-prec'].forEach(function (id) { $(id)._vider(); });
   $('obs-colle').value = ''; $('dossier').value = ''; $('confrere-nom').value = ''; $('confrere-adresse').value = '';
-  etat.demandes = []; etat.examen = null; etat.releve = null;
+  etat.demandes = []; etat.examen = null; etat.releve = null; etat.annote = null; etat.releveId = null; $('second').innerHTML = ''; $('annote-detail').innerHTML = ''; $('etat-annote').textContent = '';
   ['etape-demandes', 'etape-releve', 'etape-mail'].forEach(function (id) { $(id).hidden = true; });
   $('etat-enregistrement').textContent = ''; $('etat-mail').textContent = '';
   window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+/* =====================================================================
+   LOT 2 — SECOND PASSAGE : le clausier MONETA (arbitrages du 27/10/2026)
+   - le clausier du type d'acte (PSV ou PUV) est lu dans le Drive par le RELAIS DE MORNING (secours : HISTO),
+     avec l'accord Google du jour ; LEXIO n'a aucun accès Google propre ;
+   - référence = la CLAUSE ÉTOILE seule de chaque rubrique ; une rubrique sans étoile est « sans référence » ;
+   - feu : rouge si l'écart profite à l'autre partie, vert s'il profite à notre client, orange si l'étude est
+     notaire des deux parties, si l'écart est neutre ou si la clause manque ; les rouges sont cochées d'office.
+   ===================================================================== */
+var RELAIS = ['https://connexion-omega.vercel.app/relais.html', 'https://histo-sand.vercel.app/relais.html'];
+var relaisActif = null, relaisN = 0, relaisAttentes = {}, relaisPrets = [];
+window.addEventListener('message', function (ev) {
+  var m = ev.data;
+  if (!m || !m.fidalRelais) return;
+  if (!RELAIS.some(function (u) { return new URL(u).origin === ev.origin; })) return;
+  if (m.fidalRelais === 'pret') { relaisPrets.slice().forEach(function (f) { f(ev); }); return; }
+  if (m.fidalRelais === 'reponse' && relaisAttentes[m.n]) { var f = relaisAttentes[m.n]; delete relaisAttentes[m.n]; f(m); }
+});
+function attendrePret(source, delai) {
+  return new Promise(function (res) {
+    var fini = false;
+    function f(ev) { if (ev.source === source() && !fini) { fini = true; relaisPrets.splice(relaisPrets.indexOf(f), 1); res(ev); } }
+    relaisPrets.push(f);
+    setTimeout(function () { if (!fini) { fini = true; var i = relaisPrets.indexOf(f); if (i >= 0) relaisPrets.splice(i, 1); res(null); } }, delai);
+  });
+}
+function ouvrirRelais() {
+  if (relaisActif) return Promise.resolve(relaisActif);
+  return RELAIS.reduce(function (p, url) {
+    return p.then(function (r) {
+      if (r) return r;
+      var cadre = document.createElement('iframe');
+      cadre.src = url; cadre.title = 'relais Drive'; cadre.setAttribute('aria-hidden', 'true'); cadre.tabIndex = -1;
+      cadre.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden';
+      var attente = attendrePret(function () { return cadre.contentWindow; }, 10000);
+      document.body.appendChild(cadre);
+      return attente.then(function (ev) { if (ev) return { cible: cadre.contentWindow, origine: ev.origin, url: url, cadre: cadre }; cadre.remove(); return null; });
+    });
+  }, Promise.resolve(null)).then(function (r) {
+    if (!r) throw new Error('relais Drive injoignable (MORNING et HISTO).');
+    relaisActif = r; return r;
+  });
+}
+function appelRelais(op) {
+  return ouvrirRelais().then(function (r) {
+    return new Promise(function (res, rej) {
+      var n = ++relaisN;
+      var minuterie = setTimeout(function () { delete relaisAttentes[n]; rej(new Error('le relais Drive ne répond plus.')); }, 60000);
+      relaisAttentes[n] = function (m) { clearTimeout(minuterie); if (m.ok) return res(m.resultat); var e = new Error(m.erreur || 'erreur du relais'); e.accord = !!m.accord; rej(e); };
+      op.fidalRelais = 'appel'; op.n = n;
+      r.cible.postMessage(op, r.origine);
+    });
+  });
+}
+function autoriserDrive() {
+  var url = (relaisActif && relaisActif.url) || RELAIS[0];
+  var fen = window.open(url + '?fenetre=1', 'relaisDriveFidal', 'width=520,height=440');
+  if (!fen) { etatSecond('La fenêtre d’accord Google a été bloquée : autorisez les fenêtres pour LEXIO, puis recommencez.'); return; }
+  etatSecond('Accord Google en cours dans la petite fenêtre…');
+  attendrePret(function () { return fen; }, 180000).then(function (ev) {
+    if (!ev) { etatSecond('Accord Google non donné.', true); return; }
+    var ancien = relaisActif;
+    relaisActif = { cible: fen, origine: ev.origin, url: url, cadre: null };
+    secondPassage().then(function () {
+      try { fen.postMessage({ fidalRelais: 'appel', op: 'fermer' }, ev.origin); } catch (e) {}
+      if (ancien && ancien.cadre) ancien.cadre.remove();
+      relaisActif = null;
+    });
+  });
+}
+function lireJsonDrive(id) { return appelRelais({ op: 'lire', id: id }).then(function (t) { return typeof t === 'string' ? JSON.parse(t) : t; }); }
+
+/* le clausier du type d'acte : squelette, puis les seules rubriques qui ont une étoile */
+var PREFIXES = { psv: 'PSV', puv: 'PUV' };
+function lireClausier(type) {
+  return appelRelais({ op: 'chercher', q: "name = 'clausier.json' and trashed = false", fields: 'files(id,name,modifiedTime)', pageSize: 20 }).then(function (r) {
+    var fichiers = r.files || [];
+    if (!fichiers.length) throw new Error('aucun clausier MONETA trouvé dans le Drive.');
+    return fichiers.reduce(function (p, f) {
+      return p.then(function (trouve) {
+        if (trouve) return trouve;
+        return lireJsonDrive(f.id).then(function (sq) { return sq && sq.moneta && sq.prefixe === PREFIXES[type] ? sq : null; }).catch(function (e) { if (e.accord) throw e; return null; });
+      });
+    }, Promise.resolve(null));
+  }).then(function (sq) {
+    if (!sq) throw new Error('pas de clausier MONETA pour ce type d’acte.');
+    var articles = {}; (sq.articles || []).forEach(function (a) { (a.rubriques || []).forEach(function (id) { articles[id] = a; }); });
+    var rubs = Object.keys(sq.rubriques || {}).map(function (id) { var r = sq.rubriques[id]; return { id: id, titre: r.titre || '', article: articles[id] ? ('Article ' + articles[id].num + ' — ' + (articles[id].titre || '')) : '', etoile: r.etoile && r.etoile.clause, clauses: r.clauses || null, fichier: sq.sommaire && sq.sommaire[id] && sq.sommaire[id].fichier }; });
+    var avec = rubs.filter(function (r) { return r.etoile; });
+    // fichier d'un seul tenant (ancien format) : les clauses sont déjà là ; sinon lecture du rubrique.json de chaque rubrique étoilée
+    return avec.reduce(function (p, r) {
+      return p.then(function () {
+        if (r.clauses || !r.fichier) return null;
+        return lireJsonDrive(r.fichier).then(function (c) { r.clauses = (c && c.clauses) || []; }).catch(function (e) { if (e.accord) throw e; r.clauses = []; });
+      });
+    }, Promise.resolve()).then(function () {
+      var refs = [];
+      avec.forEach(function (r) { var c = (r.clauses || []).filter(function (x) { return x.id === r.etoile; })[0]; if (c && c.texte) refs.push({ id: r.id, titre: r.titre, article: r.article, sens: c.sens || '', texte: c.texte }); });
+      return { references: refs, nbRubriques: rubs.length, nbSansEtoile: rubs.length - refs.length, reference: sq.reference || '' };
+    });
+  });
+}
+function etatSecond(texte, avecAccord) {
+  var z = $('second-etat'); if (!z) return;
+  z.innerHTML = ''; z.appendChild(el('span', null, texte));
+  if (avecAccord) { var b = el('button', 'bouton', 'Autoriser la lecture du Drive'); b.type = 'button'; b.onclick = autoriserDrive; z.appendChild(b); }
+}
+function couleurClause(x) {
+  var pos = position();
+  if (x.ecart === 'aucun' || x.ecart === 'forme') return 'vert';
+  if (pos === 'deux' || x.profite_a === 'neutre' || x.ecart === 'absente' && x.profite_a === 'neutre') return 'orange';
+  return x.profite_a === pos ? 'vert' : 'rouge';
+}
+var ECARTS = { aucun: 'Conforme à l’étoile', forme: 'Rédaction différente, même portée', fond: 'S’écarte de l’étoile', absente: 'Absente du projet' };
+function secondPassage() {
+  var z = $('second'), type = $('type-acte').value;
+  z.innerHTML = '';
+  var h = el('h3', 'bloc', 'Clauses confrontées au clausier'); h.appendChild(el('small', null, 'clause étoile de chaque rubrique, selon votre position')); z.appendChild(h);
+  var ligne = el('div', 'second-etat'); ligne.id = 'second-etat'; z.appendChild(ligne);
+  var liste = el('div'); liste.id = 'second-liste'; z.appendChild(liste);
+  if (!PREFIXES[type]) { etatSecond('Pas de clausier MONETA pour ce type d’acte : le second passage ne porte que sur les promesses.'); majAnnote(); return Promise.resolve(); }
+  etatSecond('Lecture du clausier MONETA…');
+  var etoiles;
+  return lireClausier(type).then(function (cl) {
+    etoiles = cl;
+    if (!cl.references.length) { etatSecond('Le clausier ne compte encore aucune clause étoile : rien à confronter (' + cl.nbRubriques + ' rubriques sans référence). Le second passage s’enrichira au fil des étoiles choisies dans MONETA.'); return []; }
+    var lots = []; for (var i = 0; i < cl.references.length; i += 40) lots.push(cl.references.slice(i, i + 40));
+    var res = [];
+    return lots.reduce(function (p, lot, k) {
+      return p.then(function () {
+        etatSecond('Confrontation des clauses étoiles au projet… (' + (k + 1) + ' sur ' + lots.length + ')');
+        var c = commun(); c.action = 'clausier'; c.projet = etat.projet.texte; c.references = lot;
+        return api(c).then(function (r) { res = res.concat(r.resultats || []); });
+      });
+    }, Promise.resolve()).then(function () { return res; });
+  }).then(function (res) {
+    if (!etoiles || !etoiles.references.length) { majAnnote(); return; }
+    var parId = {}; etoiles.references.forEach(function (r) { parId[r.id] = r; });
+    var clauses = res.map(function (x) { var r = parId[x.id] || {}; return { rubrique: x.id, titre: r.titre, article: r.article, etoile: r.texte, ecart: x.ecart, profite_a: x.profite_a, explication: x.explication, extrait: x.extrait }; });
+    clauses.forEach(function (x) { x.couleur = couleurClause(x); });
+    var ordre = { rouge: 0, orange: 1, vert: 2 };
+    clauses.sort(function (a, b) { return ordre[a.couleur] - ordre[b.couleur]; });
+    etat.releve.clauses = clauses;
+    var ecarts = clauses.filter(function (x) { return x.ecart === 'fond' || x.ecart === 'absente'; });
+    var rouges = clauses.filter(function (x) { return x.couleur === 'rouge'; }).length;
+    etatSecond(clauses.length + ' clause(s) étoile confrontée(s), ' + ecarts.length + ' écart(s) de fond' + (rouges ? ' dont ' + rouges + ' contre votre client' : '') + '. ' + etoiles.nbSansEtoile + ' rubrique(s) sans étoile, donc sans référence.');
+    clauses.filter(function (x) { return x.ecart === 'fond' || x.ecart === 'absente'; }).forEach(function (x, i) {
+      var lib = ECARTS[x.ecart] + (x.profite_a !== 'neutre' ? ' — profite au ' + partie(x.profite_a) : '') + (x.couleur === 'rouge' ? ', contre votre client' : '');
+      liste.appendChild(point(x.couleur, 'M' + (i + 1), lib, x.titre, x.explication, x.extrait, { objet: x, coche: x.couleur === 'rouge' }, [x.rubrique, x.article].filter(Boolean).join(' — ')));
+    });
+    var conformes = clauses.filter(function (x) { return x.ecart === 'aucun' || x.ecart === 'forme'; }).length;
+    if (conformes) liste.appendChild(el('p', 'bilan-clausier', conformes + ' clause(s) conformes à l’étoile, sur le fond.'));
+    // feu d'ensemble : une clause rouge fait passer le relevé au rouge
+    if (rouges && etat.releve.feu !== 'rouge') { etat.releve.feu = 'rouge'; var f = document.querySelector('#releve .feu'); if (f) { f.className = 'feu rouge'; f.querySelector('.mot').textContent = 'À reprendre'; } }
+    else if (!rouges && ecarts.length && etat.releve.feu === 'vert') { etat.releve.feu = 'orange'; var g = document.querySelector('#releve .feu'); if (g) { g.className = 'feu orange'; g.querySelector('.mot').textContent = 'À vérifier'; } }
+    enregistrer();
+    majAnnote();
+  }).catch(function (e) {
+    if (e.accord) etatSecond('La lecture du clausier attend votre accord Google.', true);
+    else etatSecond('Second passage impossible : ' + e.message);
+    majAnnote();
+  });
+}
+
+/* ---------- le projet annoté, en suivi des révisions ---------- */
+function pointsRetenus() {
+  var r = etat.releve; if (!r) return [];
+  var l = [];
+  r.demandes.forEach(function (d) { if (d.etat !== 'integree' && d.retenue) l.push({ id: 'D' + d.n, genre: 'demande', texte: d.texte, explication: d.explication }); });
+  (r.clauses || []).forEach(function (x, i) { if (x.retenue) l.push({ id: 'M' + (i + 1), genre: 'clause', texte: x.titre, explication: x.explication, etoile: x.etoile }); });
+  return l;
+}
+function majAnnote() {
+  var b = $('preparer-annote'), n = pointsRetenus().length, docx = etat.projet && etat.projet.genre === 'docx';
+  b.disabled = !docx || !n;
+  if (!docx) $('etat-annote').textContent = 'Le projet a été déposé en PDF : le marquage demande sa version Word. Seul le mail de synthèse est préparé.';
+  else if (!n) $('etat-annote').textContent = 'Aucun point coché.';
+  else $('etat-annote').textContent = n + ' point(s) coché(s) à porter.';
+  if (b.textContent !== 'Préparer le projet annoté') b.textContent = 'Préparer le projet annoté';
+}
+$('preparer-annote').addEventListener('click', function () {
+  var pts = pointsRetenus(); if (!pts.length || !etat.projet.buf) return;
+  $('erreur-releve').textContent = ''; $('annote-detail').innerHTML = '';
+  travail('LEXIO rédige les modifications et les porte dans le Word… (une à deux minutes)');
+  var zip, xml;
+  JSZip.loadAsync(etat.projet.buf).then(function (z) { zip = z; return z.file('word/document.xml').async('string'); }).then(function (x) {
+    xml = x;
+    var paras = LexioRevisions.paragraphes(xml).filter(function (p) { return p.texte.trim(); }).map(function (p) { return { p: p.p, texte: p.texte, bloque: p.complexe }; });
+    var c = commun(); c.action = 'redaction'; c.paragraphes = paras; c.points = pts;
+    return api(c);
+  }).then(function (r) {
+    var auteur = $('auteur').value.trim() || 'FIDAL Notaires';
+    var res = LexioRevisions.appliquer(xml, r.modifications.map(function (m) { return { p: m.p, mode: m.mode, nouveau: m.nouveau }; }), auteur);
+    zip.file('word/document.xml', res.xml);
+    return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }).then(function (blob) {
+      var nom = (etat.projet.nom || 'projet.docx').replace(/\.docx$/i, '') + ' — observations ' + new Date().toLocaleDateString('fr-FR').replace(/\//g, '-') + '.docx';
+      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nom; document.body.appendChild(a); a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+      etat.annote = { nom: nom, faites: res.faites.length };
+      var parP = {}; r.modifications.forEach(function (m) { parP[m.p] = m; });
+      var portes = {}; res.faites.forEach(function (p) { (parP[p] && parP[p].points || []).forEach(function (id) { portes[id] = 1; }); });
+      var manques = pts.filter(function (x) { return !portes[x.id]; });
+      $('etat-annote').textContent = 'Projet annoté téléchargé : « ' + nom + ' » (' + res.faites.length + ' modification(s) en suivi des révisions). Relisez-le dans Word avant de le joindre.';
+      var ul = $('annote-detail');
+      manques.forEach(function (x) {
+        var motif = (r.non_portes || []).filter(function (y) { return y.id === x.id; })[0];
+        var refus = res.refusees.filter(function (y) { return parP[y.p] && (parP[y.p].points || []).indexOf(x.id) >= 0; })[0];
+        ul.appendChild(el('li', null, x.id + ' — ' + (x.texte || '').slice(0, 120) + ' : à porter à la main (' + ((motif && motif.motif) || (refus && refus.motif) || 'aucun paragraphe sûr trouvé') + ').'));
+      });
+    });
+  }).catch(function (x) { $('erreur-releve').textContent = x.message; }).then(finTravail);
 });
 verifierDepot();
 </script>
