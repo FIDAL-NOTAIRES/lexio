@@ -1,9 +1,11 @@
-/* LEXIO 1.0 — fonction serveur unique (plafond de douze fonctions du plan Hobby : tout passe par ici).
+/* LEXIO 2.0 — fonction serveur unique (plafond de douze fonctions du plan Hobby : tout passe par ici).
    Actions (POST, JSON, en-tête x-lexio-code) :
      verifier     contrôle du code d'accès
      demandes     relève la liste des demandes dans les observations de l'étude
      examen       premier passage : verdict demande par demande, ajouts non demandés, concordance des chiffres
-     mail         prépare le mail de retour au confrère (JFD l'envoie lui-même depuis sa messagerie)
+     clausier     second passage (lot 2) : chaque clause étoile de MONETA confrontée au projet du confrère
+     redaction    texte des modifications à porter en suivi des révisions dans le Word du confrère (lot 2)
+     mail         prépare le mail de retour au confrère (synthèse seule : JFD l'envoie lui-même depuis sa messagerie)
      enregistrer  range le relevé de l'examen dans Neon (jamais le texte des actes)
    Variables Vercel : LEXIO_CODE (code d'accès du cabinet), ANTHROPIC_API_KEY, DATABASE_URL,
    LEXIO_MODELE (facultative, modèle Claude). */
@@ -11,7 +13,7 @@
 
 const crypto = require('crypto');
 
-const VERSION = '1.0';
+const VERSION = '2.0';
 const MODELE = process.env.LEXIO_MODELE || 'claude-sonnet-5-5';
 const MAX_TEXTE = 900000;           // signes acceptés par pièce
 const POSITIONS = ['vendeur', 'acquereur', 'deux'];
@@ -115,12 +117,86 @@ async function examen(c) {
   };
 }
 
+/* ---------- second passage : le clausier MONETA (lot 2, arbitrages du 27/10/2026) ----------
+   Référence = la CLAUSE ÉTOILE seule de chaque rubrique (choisie à la main dans MONETA) ; une rubrique sans étoile
+   n'est pas envoyée ici. Le modèle dit, pour chaque étoile, où le projet traite le même objet, si la rédaction
+   s'en écarte sur le fond, et à qui l'écart profite. Le feu est posé par la page selon la position de l'étude. */
+const SENS_LIB = { equilibree: 'équilibrée', vendeur: 'pro-vendeur', acquereur: 'pro-acquéreur' };
+async function clausier(c) {
+  const projet = texte(c.projet);
+  if (projet.trim().length < 200) { const e = new Error('Projet vide ou illisible.'); e.statut = 400; throw e; }
+  const refs = (Array.isArray(c.references) ? c.references : []).slice(0, 40)
+    .map(r => ({ id: texte(r.id, 40), titre: texte(r.titre, 200), article: texte(r.article, 200), sens: SENS_LIB[r.sens] ? r.sens : '', texte: texte(r.texte, 6000) }))
+    .filter(r => r.id && r.texte.trim());
+  if (!refs.length) return { resultats: [] };
+  const puv = c.type_acte === 'puv';
+  const sys = 'Tu assistes un notaire. On te remet le projet d’un notaire confrère (' + libelleType(c.type_acte) + ') et, rubrique par rubrique, ' +
+    'la CLAUSE ÉTOILE de son clausier : la rédaction de référence de l’étude, neutralisée (les éléments propres à un dossier sont entre crochets, par exemple [PRIX] ou [DATE]). ' +
+    client(c.position, c.type_acte) + '\n' +
+    'Pour CHAQUE clause étoile : 1) cherche le passage du projet qui traite le même objet ; 2) dis s’il s’en écarte : "aucun" (même portée, quelle que soit la forme), ' +
+    '"forme" (rédaction différente, même effet juridique), "fond" (portée, délai, montant, condition, garantie ou charge différents), ou "absente" si le projet ne traite pas cet objet ; ' +
+    '3) pour un écart de fond ou une absence, dis à qui il profite par rapport à l’étoile : "vendeur", "acquereur" ou "neutre"' + (puv ? ' (ici "vendeur" = promettant, "acquereur" = bénéficiaire)' : '') + ', ' +
+    'en tenant compte de l’étiquette de l’étoile (une étoile pro-vendeur ramenée à l’équilibre profite à l’acquéreur) ; ' +
+    '4) explique l’écart en une ou deux phrases précises (sans recopier la clause) ; 5) cite le passage du projet, mot pour mot, moins de 300 signes. ' +
+    'Les éléments entre crochets de l’étoile ne sont jamais des écarts. ' + CADRE + '\n' +
+    'Format : {"resultats":[{"id":"…","ecart":"aucun|forme|fond|absente","profite_a":"vendeur|acquereur|neutre","explication":"…","extrait":"…"}]}';
+  const contenu = 'CLAUSES ÉTOILES DU CLAUSIER :\n' + refs.map(r => '— [' + r.id + '] ' + (r.article ? r.article + ' — ' : '') + r.titre +
+    (r.sens ? ' (étiquette : ' + SENS_LIB[r.sens] + ')' : ' (non qualifiée)') + '\n' + r.texte).join('\n\n') + '\n\nPROJET DU CONFRÈRE :\n' + projet;
+  const r = json(await claude(sys, contenu, 8000));
+  const ECARTS = ['aucun', 'forme', 'fond', 'absente'], PROFITS = ['vendeur', 'acquereur', 'neutre'], connus = new Set(refs.map(x => x.id));
+  return {
+    resultats: (r.resultats || []).filter(x => connus.has(String(x.id))).map(x => ({
+      id: String(x.id), ecart: ECARTS.includes(x.ecart) ? x.ecart : 'fond', profite_a: PROFITS.includes(x.profite_a) ? x.profite_a : 'neutre',
+      explication: texte(x.explication, 1200), extrait: texte(x.extrait, 400)
+    }))
+  };
+}
+
+/* ---------- les modifications à porter dans le Word du confrère (lot 2, arbitrage du 27/10/2026) ----------
+   La page envoie les paragraphes numérotés du projet (texte visible) et les points retenus : demandes oubliées ou
+   partielles du premier passage, clauses cochées du second (avec la clause étoile, ramenée au dossier).
+   Le modèle rend, pour chaque point, le paragraphe à modifier et son NOUVEAU TEXTE COMPLET, ou un paragraphe à ajouter. */
+async function redaction(c) {
+  const paras = (Array.isArray(c.paragraphes) ? c.paragraphes : []).slice(0, 4000)
+    .map(p => ({ p: +p.p, texte: texte(p.texte, 4000), bloque: !!p.bloque })).filter(p => p.texte.trim());
+  const points = (Array.isArray(c.points) ? c.points : []).slice(0, 60)
+    .map(x => ({ id: texte(x.id, 20), genre: x.genre === 'clause' ? 'clause' : 'demande', texte: texte(x.texte, 1500), explication: texte(x.explication, 1200), etoile: texte(x.etoile, 6000) }))
+    .filter(x => x.id && (x.texte.trim() || x.etoile.trim()));
+  if (!paras.length) { const e = new Error('Le projet n’a pas de paragraphe lisible : le marquage demande la version Word du confrère.'); e.statut = 400; throw e; }
+  if (!points.length) return { modifications: [] };
+  const sys = 'Tu assistes un notaire qui renvoie au confrère son projet de ' + libelleType(c.type_acte) + ' avec ses modifications en suivi des révisions. ' +
+    client(c.position, c.type_acte) + '\n' +
+    'On te donne les paragraphes numérotés du projet et les points à porter. Pour CHAQUE point, propose la modification la plus courte qui le satisfait : ' +
+    'soit "remplacer" un paragraphe existant (donne son numéro et son NOUVEAU TEXTE COMPLET, identique à l’ancien hors la modification, même ponctuation, même style), ' +
+    'soit "ajouter_apres" un paragraphe (donne le numéro du paragraphe après lequel insérer et le texte du nouveau paragraphe). ' +
+    'Pour une clause, ramène le passage à la portée de la clause étoile fournie, en remplaçant ses crochets par les éléments du dossier tirés du projet (noms, montants, dates) ; ' +
+    'si un élément manque, laisse le crochet tel quel. Pour une demande, rédige ce qui est demandé, rien de plus. ' +
+    'Ne touche jamais aux paragraphes marqués [bloqué]. Plusieurs points peuvent viser le même paragraphe : réunis-les alors en UNE seule modification et cite tous leurs identifiants. ' +
+    'Si un point ne peut pas être porté sans risque, rends-le dans "non_portes" avec le motif. ' + CADRE + '\n' +
+    'Format : {"modifications":[{"points":["…"],"p":12,"mode":"remplacer|ajouter_apres","nouveau":"…","motif":"…"}],"non_portes":[{"id":"…","motif":"…"}]}';
+  const contenu = 'POINTS À PORTER :\n' + points.map(x => '— [' + x.id + '] ' + (x.genre === 'clause' ? 'Clause à ramener vers l’étoile : ' : 'Demande : ') + x.texte +
+      (x.explication ? '\n  Constat : ' + x.explication : '') + (x.etoile ? '\n  Clause étoile : ' + x.etoile : '')).join('\n') +
+    '\n\nPARAGRAPHES DU PROJET :\n' + paras.map(p => '§' + p.p + (p.bloque ? ' [bloqué]' : '') + ' : ' + p.texte).join('\n');
+  const r = json(await claude(sys, contenu, 12000));
+  const ok = new Set(paras.filter(p => !p.bloque).map(p => p.p)), ids = new Set(points.map(x => x.id)), vus = new Set();
+  const modifications = [];
+  (r.modifications || []).forEach(m => {
+    const p = +m.p, mode = m.mode === 'ajouter_apres' ? 'ajouter_apres' : 'remplacer';
+    if (!ok.has(p) || !String(m.nouveau || '').trim()) return;
+    const cle = mode + p; if (vus.has(cle)) return; vus.add(cle);
+    modifications.push({ points: (Array.isArray(m.points) ? m.points : []).map(String).filter(x => ids.has(x)), p, mode, nouveau: texte(m.nouveau, 8000), motif: texte(m.motif, 400) });
+  });
+  return { modifications, non_portes: (r.non_portes || []).map(x => ({ id: texte(x.id, 20), motif: texte(x.motif, 400) })).filter(x => ids.has(x.id)) };
+}
+
 async function mail(c) {
   const sys = 'Tu rédiges, pour un notaire, le mail de retour au notaire confrère après relecture de sa nouvelle version d’un projet de ' +
     libelleType(c.type_acte) + '. ' + client(c.position, c.type_acte) + ' ' +
     'Ton confraternel, courtois et ferme, phrases courtes, vouvoiement, sans formule creuse. Commence par « Cher Maître, ». ' +
-    'Remercie brièvement pour la nouvelle version ; liste ensuite, numérotés, les points restant à reprendre : demandes oubliées ou partiellement intégrées (rappelle précisément ce qui est attendu), ' +
-    'puis les ajouts non demandés que l’étude ne peut accepter, puis les écarts de chiffres à corriger. Ne mentionne pas les points correctement intégrés un par un. ' +
+    'Remercie brièvement pour la nouvelle version ; donne ensuite, numérotée, la SYNTHÈSE des points restant à reprendre : demandes oubliées ou partiellement intégrées, ' +
+    'clauses du projet que l’étude ne peut accepter, ajouts non demandés refusés, écarts de chiffres. Une ligne courte par point, qui dit l’objet et le sens de la demande : ' +
+    'NE RECOPIE JAMAIS LE TEXTE D’UNE CLAUSE et ne propose pas de rédaction dans le mail. Ne mentionne pas les points correctement intégrés un par un. ' +
+    'Si le relevé indique que les modifications sont portées dans le projet joint, dis-le en une phrase (« Vous trouverez nos modifications en suivi des révisions dans le projet joint. »). ' +
     'Termine par une phrase demandant une version mise à jour et par « Bien à vous, » — sans signature (la messagerie l’ajoute). ' +
     'Si tout est intégré et qu’aucun point ne reste, rédige un court mail d’accord. ' + CADRE +
     ' Format : {"objet":"…","corps":"…"} (le corps en texte simple, retours à la ligne par \\n).';
@@ -139,15 +215,23 @@ async function enregistrer(c) {
   const dem = (r.demandes || []).map(d => ({ n: +d.n || 0, texte: texte(d.texte, 1000), etat: texte(d.etat, 20), explication: texte(d.explication, 1200) }));
   const ajo = (r.ajouts || []).map(a => ({ objet: texte(a.objet, 300), profite_a: texte(a.profite_a, 20), couleur: texte(a.couleur, 10) }));
   const chi = (r.chiffres || []).map(x => ({ objet: texte(x.objet, 200), etat: texte(x.etat, 20) }));
+  const cla = (r.clauses || []).map(x => ({ rubrique: texte(x.rubrique, 40), titre: texte(x.titre, 200), ecart: texte(x.ecart, 10), profite_a: texte(x.profite_a, 12), couleur: texte(x.couleur, 10), retenue: !!x.retenue }));
   const nb = e => dem.filter(d => d.etat === e).length;
   const defav = ajo.filter(a => a.couleur === 'rouge').length;
   const adresse = texte(c.confrere_adresse, 200).toLowerCase().trim();
   let essai = 0, derniere;
   while (essai < 2) {
     try {
-      const lignes = await sql`INSERT INTO lexio_examen (dossier, type_acte, position, confrere_nom, confrere_adresse, auteur, feu, demandes, ajouts, chiffres, nb_integrees, nb_partielles, nb_oubliees, nb_ajouts_defavorables)
+      const id = +c.id || 0;
+      if (id) {   // second passage terminé : le relevé déjà enregistré est complété (clauses, feu d'ensemble)
+        const m = await sql`UPDATE lexio_examen SET clauses = ${JSON.stringify(cla)}::jsonb, feu = ${texte(r.feu, 10)},
+            nb_clauses_rouges = ${cla.filter(x => x.couleur === 'rouge').length} WHERE id = ${id} RETURNING id`;
+        if (m.length) return { enregistre: true, id };
+      }
+      const lignes = await sql`INSERT INTO lexio_examen (dossier, type_acte, position, confrere_nom, confrere_adresse, auteur, feu, demandes, ajouts, chiffres, nb_integrees, nb_partielles, nb_oubliees, nb_ajouts_defavorables, clauses, nb_clauses_rouges)
         VALUES (${texte(c.dossier, 200)}, ${texte(c.type_acte, 10)}, ${texte(c.position, 10)}, ${texte(c.confrere_nom, 200)}, ${adresse}, ${texte(c.auteur, 100)}, ${texte(r.feu, 10)},
-          ${JSON.stringify(dem)}::jsonb, ${JSON.stringify(ajo)}::jsonb, ${JSON.stringify(chi)}::jsonb, ${nb('integree')}, ${nb('partielle')}, ${nb('oubliee')}, ${defav})
+          ${JSON.stringify(dem)}::jsonb, ${JSON.stringify(ajo)}::jsonb, ${JSON.stringify(chi)}::jsonb, ${nb('integree')}, ${nb('partielle')}, ${nb('oubliee')}, ${defav},
+          ${JSON.stringify(cla)}::jsonb, ${cla.filter(x => x.couleur === 'rouge').length})
         RETURNING id`;
       if (adresse) {
         await sql`INSERT INTO lexio_confrere (adresse, nom, premier_examen, dernier_examen, nb_examens, nb_oublis, nb_ajouts_defavorables)
@@ -178,6 +262,8 @@ module.exports = async function (req, res) {
       case 'verifier': return res.status(200).json({ ok: true, version: VERSION });
       case 'demandes': return res.status(200).json(await demandes(c));
       case 'examen': return res.status(200).json(await examen(c));
+      case 'clausier': return res.status(200).json(await clausier(c));
+      case 'redaction': return res.status(200).json(await redaction(c));
       case 'mail': return res.status(200).json(await mail(c));
       case 'enregistrer': return res.status(200).json(await enregistrer(c));
       default: return res.status(400).json({ erreur: 'Action inconnue.' });
@@ -186,4 +272,4 @@ module.exports = async function (req, res) {
     return res.status(e.statut || 500).json({ erreur: e.statut ? e.message : 'Erreur interne : ' + String(e.message || e).slice(0, 200) });
   }
 };
-module.exports._interne = { demandes, examen, mail, enregistrer, json, libellesParties };
+module.exports._interne = { demandes, examen, clausier, redaction, mail, enregistrer, json, libellesParties };
