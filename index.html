@@ -5,9 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>LEXIO — relecture des projets du confrère</title>
-<!-- LEXIO 2.0 — premier passage (demandes, ajouts non demandés, chiffres), second passage (clauses étoiles du clausier
+<!-- LEXIO 3.0 — premier passage (demandes, ajouts non demandés, chiffres), second passage (clauses étoiles du clausier
      MONETA lues par le relais de MORNING, feux selon la position de l'étude), projet annoté en suivi des révisions,
-     mail de synthèse. Arbitrages du 26/10/2026 (lot 1) et du 27/10/2026 (lot 2). -->
+     mail de synthèse. Lot 3 : historique du dossier (suite d'examen confirmée d'un clic, demandes reprises d'office,
+     points obtenus revérifiés), profil du confrère au dépôt, tolérance à trois crans retenue par dossier.
+     Arbitrages du 26/10/2026 (lot 1) et du 27/10/2026 (lots 2 et 3). -->
 <style>
 :root{
   --nuit:#0F2238; --canard:#33838B; --orange:#FF982D; --carmin:#A01040; --cyan:#6DD5DC; --jaune:#FFC900;
@@ -44,6 +46,9 @@ fieldset.position legend{font-size:14px;color:var(--gris);padding:0 6px}
 .radios{display:flex;flex-wrap:wrap;gap:8px 22px}
 .radios label{display:flex;gap:8px;align-items:center;cursor:pointer}
 .radios input{accent-color:var(--canard);width:18px;height:18px}
+.radios small{color:var(--gris);font-size:13px}
+.note-tolerance{font-size:13px;color:var(--gris);margin:6px 0 0}
+.note-tolerance:empty{display:none}
 
 .depots{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
 .depot{border:2px dashed #AFC0CC;border-radius:4px;padding:18px;min-height:150px;display:flex;flex-direction:column;gap:6px;background:#FAFCFD;cursor:pointer;position:relative}
@@ -59,6 +64,19 @@ fieldset.position legend{font-size:14px;color:var(--gris);padding:0 6px}
 details.coller{margin-top:14px}
 details.coller summary{cursor:pointer;color:var(--canard);font-size:15px}
 details.coller textarea{width:100%;min-height:140px;margin-top:8px;border:1px solid var(--filet);border-radius:3px;padding:10px}
+
+/* lot 3 : la suite du dossier et les habitudes du confrère */
+.suite-proposee{border:1px solid var(--canard);border-left-width:6px;border-radius:4px;padding:12px 16px;margin:0 0 14px;background:#EEF7F8}
+.suite-proposee p{margin:0 0 8px}
+.suite-proposee .actions{margin-top:6px}
+.suite-proposee.confirmee{border-color:var(--canard);background:#fff}
+.encart-confrere{border:1px solid var(--filet);border-left:6px solid var(--nuit);border-radius:4px;padding:12px 16px;margin:0 0 18px;background:var(--voile)}
+.encart-confrere h3{font:400 18px/1.3 var(--titre);margin:0 0 6px}
+.encart-confrere p{margin:2px 0;font-size:15px}
+.encart-confrere ul{margin:6px 0 0;padding-left:20px;font-size:15px}
+.encart-confrere .discret{color:var(--gris);font-size:13px;margin-top:6px}
+.marque-relance{display:inline-block;font-size:12px;font-weight:600;color:#fff;background:var(--carmin);border-radius:2px;padding:1px 6px;margin-right:6px;vertical-align:1px}
+.marque-surveille{display:inline-block;font-size:12px;font-weight:600;color:var(--nuit);background:var(--jaune);border-radius:2px;padding:1px 6px;margin-right:6px;vertical-align:1px}
 
 .actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:20px}
 .bouton{border:1px solid var(--canard);background:#fff;color:var(--canard);border-radius:3px;padding:10px 18px;cursor:pointer;font-weight:600}
@@ -139,7 +157,7 @@ h3.bloc small{font:14px var(--corps);color:var(--gris);margin-left:8px}
   <div class="tete-in">
     <h1 class="marque">LE<span>X</span>IO</h1>
     <p class="devise">Relecture des projets reçus du confrère</p>
-    <span class="version">version 2.0</span>
+    <span class="version">version 3.0</span>
   </div>
 </header>
 
@@ -206,6 +224,20 @@ h3.bloc small{font:14px var(--corps);color:var(--gris);margin-left:8px}
         <input id="confrere-adresse" type="email" maxlength="200" placeholder="adresse@etude.notaires.fr">
       </label>
     </div>
+
+    <!-- lot 3 : suite d'un examen précédent du même dossier, puis habitudes du confrère -->
+    <div id="suite-zone"></div>
+    <div id="profil-zone"></div>
+
+    <fieldset class="position">
+      <legend>Tolérance pour ce dossier</legend>
+      <div class="radios" id="tolerances">
+        <label><input type="radio" name="tolerance" value="souple"><span>Souple <small>— seuls les écarts de fond comptent</small></span></label>
+        <label><input type="radio" name="tolerance" value="normal" checked><span>Normale</span></label>
+        <label><input type="radio" name="tolerance" value="strict"><span>Stricte <small>— demande partielle en rouge, tout ajout au moins en orange</small></span></label>
+      </div>
+      <p class="note-tolerance" id="note-tolerance"></p>
+    </fieldset>
 
     <div class="actions">
       <button class="bouton fort" id="relever" disabled>Relever mes demandes</button>
@@ -283,7 +315,7 @@ h3.bloc small{font:14px var(--corps);color:var(--gris);margin-left:8px}
 var $ = function (id) { return document.getElementById(id); };
 if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-var etat = { obs: null, projet: null, prec: null, demandes: [], examen: null, releve: null };
+var etat = { obs: null, projet: null, prec: null, demandes: [], examen: null, releve: null, suite: null, candidat: null, profil: null };
 
 /* ---------- mémoire de session (rien d'autre n'est gardé dans le navigateur) ---------- */
 function lireSession(cle) { try { return sessionStorage.getItem(cle); } catch (e) { return null; } }
@@ -311,7 +343,7 @@ $('porte-form').addEventListener('submit', function (e) {
   e.preventDefault();
   ecrireSession('lexio.code', $('porte-code').value);
   $('porte-erreur').textContent = '';
-  api({ action: 'verifier' }).then(function () { $('porte').hidden = true; $('porte-code').value = ''; })
+  api({ action: 'verifier' }).then(function () { $('porte').hidden = true; $('porte-code').value = ''; consulterHistorique(); })
     .catch(function (x) { $('porte-erreur').textContent = x.message; });
 });
 if (!lireSession('lexio.code')) montrerPorte();
@@ -327,6 +359,19 @@ function libelles() {
 $('type-acte').addEventListener('change', libelles); libelles();
 function position() { var r = document.querySelector('input[name=position]:checked'); return r ? r.value : ''; }
 function partie(cote) { var puv = $('type-acte').value === 'puv'; return cote === 'vendeur' ? (puv ? 'promettant' : 'vendeur') : cote === 'acquereur' ? (puv ? 'bénéficiaire' : 'acquéreur') : 'neutre'; }
+
+/* ---------- tolérance (lot 3, choix 4) : trois crans, retenus pour le dossier ---------- */
+function tolerance() { var r = document.querySelector('input[name=tolerance]:checked'); return r ? r.value : 'normal'; }
+function poserTolerance(v) {
+  var r = document.querySelector('input[name=tolerance][value="' + (['souple', 'normal', 'strict'].indexOf(v) >= 0 ? v : 'normal') + '"]');
+  if (r) r.checked = true;
+}
+document.querySelectorAll('input[name=tolerance]').forEach(function (r) {
+  r.addEventListener('change', function () {
+    $('note-tolerance').textContent = etat.examen ? 'Le nouveau cran vaudra pour le prochain examen : celui-ci a été fait en tolérance « ' + LIB_TOL[etat.releve && etat.releve.tolerance || 'normal'] + ' ».' : '';
+  });
+});
+var LIB_TOL = { souple: 'souple', normal: 'normale', strict: 'stricte' };
 
 /* ---------- lecture des pièces, sur le poste ---------- */
 function attr(n, nom) { return n.getAttribute(nom) || n.getAttribute(nom.replace(/^w:/, '')) || ''; }
@@ -458,6 +503,7 @@ function proposerConfrere(m) {
   if (dest && dest.adresse && !$('confrere-adresse').value) $('confrere-adresse').value = dest.adresse;
   if (dest && dest.nom && !$('confrere-nom').value) $('confrere-nom').value = dest.nom;
   if (!$('dossier').value && m.objet) $('dossier').value = SuiviLecture.nettoyerObjet ? SuiviLecture.nettoyerObjet(m.objet) : m.objet;
+  consulterHistorique();
 }
 function textObs() { var c = $('obs-colle').value.trim(); return etat.obs ? etat.obs.texte + (c ? '\n\n' + c : '') : c; }
 function verifierDepot() {
@@ -471,6 +517,97 @@ function verifierDepot() {
 document.querySelectorAll('input[name=position]').forEach(function (r) { r.addEventListener('change', verifierDepot); });
 $('obs-colle').addEventListener('input', verifierDepot);
 
+/* =====================================================================
+   LOT 3 — HISTORIQUE DU DOSSIER ET PROFIL DU CONFRÈRE (arbitrages du 27/10/2026)
+   - choix 1 : un examen précédent est reconnu par l'intitulé du dossier et l'adresse du confrère ;
+     LEXIO propose « Suite de l'examen du … ? », vous confirmez ou répondez « Nouveau dossier » ;
+   - choix 2 : une fois la suite confirmée, les demandes restées sans suite sont reprises d'office et les
+     points déjà obtenus sont revérifiés (rouges s'ils disparaissent) ;
+   - choix 3 : les habitudes du confrère s'affichent ici, au dépôt ; ses rubriques sensibles sont surveillées ;
+   - choix 4 : la tolérance retenue pour le dossier est reprise d'office.
+   ===================================================================== */
+function normal(t) { return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+function rang(n) { return n === 2 ? 'deuxième' : n === 3 ? 'troisième' : n === 4 ? 'quatrième' : n === 5 ? 'cinquième' : n + 'e'; }
+var minuterieHisto = null, derniereCle = '', refusees = {};
+function consulterHistorique() {
+  clearTimeout(minuterieHisto);
+  minuterieHisto = setTimeout(function () {
+    var adresse = $('confrere-adresse').value.trim().toLowerCase(), dossier = $('dossier').value.trim();
+    if (!lireSession('lexio.code') || !/@/.test(adresse)) { if (!adresse) { etat.profil = null; etat.candidat = null; dessinerProfil(); dessinerSuite(); } return; }
+    var cle = adresse + '|' + normal(dossier);
+    if (cle === derniereCle) return;
+    derniereCle = cle;
+    api({ action: 'historique', confrere_adresse: adresse, dossier: dossier }).then(function (r) {
+      if (cle !== derniereCle) return;
+      etat.profil = r.profil || null;
+      // une suite déjà confirmée reste en place tant que le dossier ne change pas
+      if (!etat.suite) etat.candidat = r.candidat && !refusees[r.candidat.id] ? r.candidat : null;
+      dessinerProfil(); dessinerSuite();
+    }).catch(function () { /* historique muet : l'examen se fait comme avant */ });
+  }, 500);
+}
+$('confrere-adresse').addEventListener('change', consulterHistorique);
+$('confrere-adresse').addEventListener('input', consulterHistorique);
+$('dossier').addEventListener('change', function () { if (etat.suite && normal(etat.suite.dossier) !== normal($('dossier').value)) { etat.suite = null; } consulterHistorique(); });
+$('dossier').addEventListener('input', consulterHistorique);
+
+function dessinerSuite() {
+  var z = $('suite-zone'); z.innerHTML = '';
+  if (etat.suite) {
+    var s = etat.suite, b = el('div', 'suite-proposee confirmee');
+    var dates = s.examens.map(function (x) { return x.date; }).join(', ');
+    b.appendChild(el('p', null, 'Suite du dossier « ' + (s.dossier || $('dossier').value) + ' » — examen' + (s.examens.length > 1 ? 's' : '') + ' précédent' + (s.examens.length > 1 ? 's' : '') + ' du ' + dates + '.'));
+    b.appendChild(el('p', null, s.relances.length + ' demande(s) restée(s) sans suite, reprise(s) d’office ; ' + s.obtenus.length + ' point(s) déjà obtenu(s), revérifié(s) dans la nouvelle version. Tolérance retenue : ' + LIB_TOL[s.tolerance] + '.'));
+    var a = el('div', 'actions'), x = el('button', 'bouton lien', 'Ce n’est pas la suite : nouveau dossier'); x.type = 'button';
+    x.onclick = function () { refusees[s.id] = 1; etat.suite = null; etat.candidat = null; dessinerSuite(); };
+    a.appendChild(x); b.appendChild(a); z.appendChild(b); return;
+  }
+  var c = etat.candidat; if (!c) return;
+  var p = el('div', 'suite-proposee');
+  p.appendChild(el('p', null, 'Suite de l’examen du ' + c.date + ' (« ' + c.dossier + ' »' + (c.nb_examens > 1 ? ', ' + c.nb_examens + ' examens' : '') + ') ?'));
+  var act = el('div', 'actions'), oui = el('button', 'bouton fort', 'Oui, c’est la suite'), non = el('button', 'bouton', 'Nouveau dossier');
+  oui.type = 'button'; non.type = 'button';
+  oui.onclick = function () {
+    oui.disabled = true;
+    api({ action: 'suite', id: c.id }).then(function (r) {
+      etat.suite = r; etat.candidat = null; poserTolerance(r.tolerance); dessinerSuite();
+      if (etat.demandes.length) { fusionnerRelances(); dessinerDemandes(); }
+    }).catch(function (x) { oui.disabled = false; $('erreur-depot').textContent = 'Historique illisible : ' + x.message; });
+  };
+  non.onclick = function () { refusees[c.id] = 1; etat.candidat = null; dessinerSuite(); };
+  act.appendChild(oui); act.appendChild(non); p.appendChild(act); z.appendChild(p);
+}
+function dessinerProfil() {
+  var z = $('profil-zone'); z.innerHTML = '';
+  var p = etat.profil; if (!p || !p.nb_examens) return;
+  var b = el('div', 'encart-confrere');
+  b.appendChild(el('h3', null, 'Habitudes de ce confrère' + (p.nom ? ' — ' + p.nom : '')));
+  b.appendChild(el('p', null, p.nb_examens + ' examen(s) sur ' + p.nb_dossiers + ' dossier(s), du ' + p.premier + ' au ' + p.dernier + '.'));
+  if (p.taux_premiere_version != null) b.appendChild(el('p', null, 'Il reprend ' + p.taux_premiere_version + ' % de vos demandes dès la première version (' + p.reprises_premiere_version + ' sur ' + p.demandes_premiere_version + ').'));
+  if (p.resistances && p.resistances.length) {
+    b.appendChild(el('p', null, 'Rubriques où il résiste souvent, surveillées de plus près :'));
+    var ul = el('ul');
+    p.resistances.forEach(function (r) { ul.appendChild(el('li', null, (r.titre || r.rubrique) + ' — ' + r.fois + ' fois')); });
+    b.appendChild(ul);
+  } else b.appendChild(el('p', 'discret', 'Pas encore de rubrique où il résiste de façon répétée.'));
+  z.appendChild(b);
+}
+function surveillees() { return ((etat.profil && etat.profil.resistances) || []).map(function (r) { return r.rubrique; }); }
+/* les demandes restées sans suite rejoignent la liste, sauf celles que vous avez déjà reformulées vous-même */
+function fusionnerRelances() {
+  if (!etat.suite) return;
+  var dejaLa = {}; etat.demandes.forEach(function (d) { dejaLa[normal(d.texte)] = d; });
+  etat.suite.relances.forEach(function (r) {
+    var d = dejaLa[normal(r.texte)];
+    if (d) { d.deja_demande_le = r.deja_demande_le; d.relance = r.relance; d.point_revenu = r.point_revenu; return; }
+    etat.demandes.push({ texte: r.texte, clause: r.clause || '', deja_demande_le: r.deja_demande_le, relance: r.relance, point_revenu: r.point_revenu, reprise: true });
+  });
+}
+function mentionRelance(d) {
+  if (!d.deja_demande_le) return '';
+  return (d.point_revenu ? 'Point obtenu puis disparu' : 'Déjà demandé') + ' le ' + d.deja_demande_le + (d.relance > 1 ? ' — ' + rang(d.relance) + ' relance' : '');
+}
+
 /* ---------- étape 2 : les demandes ---------- */
 function commun() { return { type_acte: $('type-acte').value, position: position(), dossier: $('dossier').value.trim() }; }
 $('relever').addEventListener('click', function () {
@@ -479,6 +616,7 @@ $('relever').addEventListener('click', function () {
   var c = commun(); c.action = 'demandes'; c.observations = textObs();
   api(c).then(function (r) {
     etat.demandes = r.demandes || [];
+    fusionnerRelances();
     if (!etat.demandes.length) etat.demandes = [{ texte: '', clause: '' }];
     dessinerDemandes(); $('etape-demandes').hidden = false; $('etape-releve').hidden = true; $('etape-mail').hidden = true;
     $('etape-demandes').scrollIntoView({ behavior: 'smooth' });
@@ -491,7 +629,13 @@ function dessinerDemandes() {
     ta.value = d.texte; ta.setAttribute('aria-label', 'Demande ' + (i + 1));
     ta.addEventListener('input', function () { d.texte = ta.value; });
     bloc.appendChild(ta);
-    if (d.clause) { var ref = document.createElement('div'); ref.className = 'ref'; ref.textContent = d.clause; bloc.appendChild(ref); }
+    var mention = mentionRelance(d);
+    if (d.clause || mention) {
+      var ref = document.createElement('div'); ref.className = 'ref';
+      if (mention) { var m = el('span', 'marque-relance', d.reprise ? 'Reprise d’office' : 'Relance'); ref.appendChild(m); ref.appendChild(document.createTextNode(mention + (d.clause ? ' — ' : ''))); }
+      if (d.clause) ref.appendChild(document.createTextNode(d.clause));
+      bloc.appendChild(ref);
+    }
     var s = document.createElement('button'); s.className = 'suppr'; s.type = 'button'; s.textContent = 'Supprimer';
     s.onclick = function () { etat.demandes.splice(i, 1); dessinerDemandes(); };
     li.appendChild(bloc); li.appendChild(s); ol.appendChild(li);
@@ -501,11 +645,24 @@ $('ajouter').addEventListener('click', function () { etat.demandes.push({ texte:
 
 /* ---------- étape 3 : l'examen ---------- */
 var VERDICTS = { integree: ['vert', 'Intégrée'], partielle: ['orange', 'Partiellement intégrée'], oubliee: ['rouge', 'Oubliée'], incertaine: ['gris', 'À vérifier'] };
-function couleurAjout(a) {
-  var pos = position();
-  if (a.profite_a === 'neutre') return 'orange';
-  if (pos === 'deux') return 'orange';
-  return a.profite_a === pos ? 'vert' : 'rouge';
+/* couleurs selon le cran de tolérance du dossier (choix 4) */
+function couleurVerdict(e, tol) {
+  if (e === 'partielle' && tol === 'strict') return 'rouge';
+  return (VERDICTS[e] || VERDICTS.incertaine)[0];
+}
+function couleurAjout(a, tol) {
+  var pos = position(), c;
+  if (a.profite_a === 'neutre') c = tol === 'souple' ? 'vert' : 'orange';
+  else if (pos === 'deux') c = 'orange';
+  else c = a.profite_a === pos ? 'vert' : 'rouge';
+  if (tol === 'strict' && c === 'vert') c = 'orange';   // en tolérance stricte, tout ajout non demandé ressort au moins en orange
+  return c;
+}
+/* les points déjà obtenus, sauf ceux que la liste redemande */
+function obtenusAVerifier() {
+  if (!etat.suite) return [];
+  var demandes = {}; etat.demandes.forEach(function (d) { demandes[normal(d.texte)] = 1; });
+  return etat.suite.obtenus.filter(function (o) { return !demandes[normal(o.texte)]; });
 }
 $('examiner').addEventListener('click', function () {
   etat.demandes = etat.demandes.filter(function (d) { return d.texte.trim(); });
@@ -514,14 +671,22 @@ $('examiner').addEventListener('click', function () {
   $('erreur-demandes').textContent = '';
   travail('LEXIO examine le projet, demande par demande… (une à deux minutes)');
   var c = commun(); c.action = 'examen'; c.demandes = etat.demandes; c.observations = textObs(); c.projet = etat.projet.texte;
+  c.tolerance = tolerance();
+  var obtenus = obtenusAVerifier();
+  if (obtenus.length) c.obtenus = obtenus.map(function (o) { return o.texte; });
   if (etat.prec) c.precedente = etat.prec.texte;
-  api(c).then(function (r) { etat.examen = r; dessinerReleve(); enregistrer(); $('etape-releve').hidden = false; $('etape-mail').hidden = true; $('etape-releve').scrollIntoView({ behavior: 'smooth' }); })
+  api(c).then(function (r) { etat.examen = r; etat.obtenusEnvoyes = obtenus; $('note-tolerance').textContent = ''; dessinerReleve(); enregistrer(); $('etape-releve').hidden = false; $('etape-mail').hidden = true; $('etape-releve').scrollIntoView({ behavior: 'smooth' }); })
     .catch(function (x) { $('erreur-demandes').textContent = x.message; }).then(finTravail);
 });
 function el(tag, classe, texte) { var e = document.createElement(tag); if (classe) e.className = classe; if (texte != null) e.textContent = texte; return e; }
-function point(couleur, num, etiquette, titre, explic, extrait, choix, rubrique) {
+function point(couleur, num, etiquette, titre, explic, extrait, choix, rubrique, marque) {
   var p = el('div', 'point ' + couleur), m = el('div', 'marge', num), c = el('div');
-  if (rubrique) c.appendChild(el('div', 'rubrique', rubrique));
+  if (rubrique || marque) {
+    var r = el('div', 'rubrique');
+    if (marque) r.appendChild(el('span', marque[0], marque[1]));
+    if (rubrique) r.appendChild(document.createTextNode(rubrique));
+    c.appendChild(r);
+  }
   c.appendChild(el('div', 'verdict', etiquette));
   if (titre) c.appendChild(el('div', 'demande', titre));
   if (explic) c.appendChild(el('p', 'explic', explic));
@@ -535,26 +700,48 @@ function point(couleur, num, etiquette, titre, explic, extrait, choix, rubrique)
   p.appendChild(m); p.appendChild(c); return p;
 }
 function dessinerReleve() {
-  var r = etat.examen, z = $('releve'); z.innerHTML = '';
+  var r = etat.examen, z = $('releve'), tol = tolerance(); z.innerHTML = '';
   var par = {}; (r.verdicts || []).forEach(function (v) { par[v.n] = v; });
-  var lignes = etat.demandes.map(function (d, i) { var v = par[i + 1] || { etat: 'incertaine', explication: 'Le modèle n’a pas rendu d’avis sur ce point.', extrait: '' }; return { n: i + 1, texte: d.texte, clause: d.clause, etat: v.etat, explication: v.explication, extrait: v.extrait }; });
-  var ajouts = (r.ajouts || []).map(function (a) { a.couleur = couleurAjout(a); return a; });
+  var lignes = etat.demandes.map(function (d, i) { var v = par[i + 1] || { etat: 'incertaine', explication: 'Le modèle n’a pas rendu d’avis sur ce point.', extrait: '' }; return { n: i + 1, texte: d.texte, clause: d.clause, etat: v.etat, explication: v.explication, extrait: v.extrait, deja_demande_le: d.deja_demande_le || '', relance: d.relance || 0, point_revenu: !!d.point_revenu }; });
+  var ajouts = (r.ajouts || []).map(function (a) { a.couleur = couleurAjout(a, tol); return a; });
+  var envoyes = etat.obtenusEnvoyes || [], parO = {}; (r.obtenus || []).forEach(function (o) { parO[o.n] = o; });
+  var obtenus = envoyes.map(function (o, i) { var v = parO[i + 1] || { etat: 'incertain', explication: 'Le modèle n’a pas rendu d’avis sur ce point.', extrait: '' }; return { n: i + 1, texte: o.texte, obtenu_le: o.obtenu_le, etat: v.etat, explication: v.explication, extrait: v.extrait }; });
   var compte = function (e) { return lignes.filter(function (l) { return l.etat === e; }).length; };
   var rougesAjouts = ajouts.filter(function (a) { return a.couleur === 'rouge'; }).length;
   var ecarts = (r.chiffres || []).filter(function (x) { return x.etat === 'ecart'; }).length;
-  var feu = compte('oubliee') || rougesAjouts ? 'rouge' : (compte('partielle') || compte('incertaine') || ecarts || ajouts.some(function (a) { return a.couleur === 'orange'; })) ? 'orange' : 'vert';
+  var disparus = obtenus.filter(function (o) { return o.etat === 'disparu'; }).length;
+  var relances = lignes.filter(function (l) { return l.deja_demande_le && l.etat !== 'integree'; }).length;
+  var partiellesRouges = tol === 'strict' ? compte('partielle') : 0;
+  var feu = compte('oubliee') || rougesAjouts || disparus || partiellesRouges ? 'rouge'
+    : (compte('partielle') || compte('incertaine') || ecarts || obtenus.some(function (o) { return o.etat === 'incertain'; }) || ajouts.some(function (a) { return a.couleur === 'orange'; })) ? 'orange' : 'vert';
   var mots = { rouge: 'À reprendre', orange: 'À vérifier', vert: 'Conforme' };
   var f = el('div', 'feu ' + feu); f.appendChild(el('div', 'mot', mots[feu]));
   f.appendChild(el('div', 'detail', compte('integree') + ' demande(s) intégrée(s), ' + compte('partielle') + ' partiellement, ' + compte('oubliee') + ' oubliée(s)' + (compte('incertaine') ? ', ' + compte('incertaine') + ' à vérifier' : '') +
-    '. ' + ajouts.length + ' ajout(s) non demandé(s)' + (rougesAjouts ? ' dont ' + rougesAjouts + ' contre votre client' : '') + '. ' + (ecarts ? ecarts + ' écart(s) de chiffres.' : 'Chiffres concordants.')));
+    (relances ? ' (dont ' + relances + ' déjà demandée(s) lors d’un examen précédent)' : '') +
+    '. ' + ajouts.length + ' ajout(s) non demandé(s)' + (rougesAjouts ? ' dont ' + rougesAjouts + ' contre votre client' : '') + '. ' + (ecarts ? ecarts + ' écart(s) de chiffres.' : 'Chiffres concordants.') +
+    (obtenus.length ? ' ' + (disparus ? disparus + ' point(s) déjà obtenu(s) qui reviennent.' : 'Points déjà obtenus maintenus.') : '') +
+    ' Tolérance ' + LIB_TOL[tol] + '.'));
   z.appendChild(f);
   if (r.synthese) z.appendChild(el('p', 'synthese', r.synthese));
 
   var h = el('h3', 'bloc', 'Vos demandes'); z.appendChild(h);
   lignes.forEach(function (l) {
     var v = VERDICTS[l.etat] || VERDICTS.incertaine, a = l.etat === 'oubliee' || l.etat === 'partielle';
-    z.appendChild(point(v[0], l.n, v[1], l.texte, l.explication, l.extrait, l.etat === 'integree' ? null : { objet: l, coche: a }));
+    var mention = l.deja_demande_le && l.etat !== 'integree' ? mentionRelance(l) : '';
+    z.appendChild(point(couleurVerdict(l.etat, tol), l.n, v[1], l.texte, l.explication, l.extrait, l.etat === 'integree' ? null : { objet: l, coche: a }, mention, mention ? ['marque-relance', 'Relance'] : null));
   });
+
+  if (obtenus.length) {
+    h = el('h3', 'bloc', 'Points déjà obtenus'); h.appendChild(el('small', null, 'lors des versions précédentes, revérifiés')); z.appendChild(h);
+    var maintenus = obtenus.filter(function (o) { return o.etat === 'maintenu'; }).length;
+    obtenus.forEach(function (o) {
+      if (o.etat === 'maintenu') return;
+      var c = o.etat === 'disparu' ? 'rouge' : 'gris';
+      z.appendChild(point(c, 'O' + o.n, o.etat === 'disparu' ? 'Point obtenu le ' + o.obtenu_le + ' qui revient' : 'À vérifier (obtenu le ' + o.obtenu_le + ')',
+        o.texte, o.explication, o.extrait, o.etat === 'disparu' ? { objet: o, coche: true } : { objet: o, coche: false }));
+    });
+    if (maintenus) z.appendChild(el('p', 'bilan-clausier', maintenus + ' point(s) déjà obtenu(s), toujours présent(s) dans le projet.'));
+  }
 
   h = el('h3', 'bloc', 'Ajouts non demandés'); h.appendChild(el('small', null, etat.prec ? 'comparés à la version précédente' : 'repérés par les modifications suivies et vos observations')); z.appendChild(h);
   if (!ajouts.length) z.appendChild(el('p', 'vide', etat.prec ? 'Aucun ajout non demandé repéré.' : 'Aucun ajout repéré. Sans la version précédente, seuls les ajouts visibles (modifications suivies) peuvent être établis.'));
@@ -568,7 +755,7 @@ function dessinerReleve() {
   if (!(r.chiffres || []).length) z.appendChild(el('p', 'vide', 'Aucun montant ni date à rapprocher.'));
   (r.chiffres || []).forEach(function (x, i) { z.appendChild(point(x.etat === 'ecart' ? 'rouge' : 'vert', 'C' + (i + 1), x.etat === 'ecart' ? 'Écart' : 'Concorde', x.objet, [x.valeurs, x.explication].filter(Boolean).join(' — '), '')); });
 
-  etat.releve = { feu: feu, feu_premier: feu, demandes: lignes, ajouts: ajouts, chiffres: r.chiffres || [], synthese: r.synthese || '', clauses: [] };
+  etat.releve = { feu: feu, feu_premier: feu, tolerance: tol, demandes: lignes, ajouts: ajouts, chiffres: r.chiffres || [], obtenus: obtenus, synthese: r.synthese || '', clauses: [] };
   etat.annote = null; etat.releveId = null; etat.enreg = null;
   secondPassage();
 }
@@ -578,6 +765,8 @@ function enregistrerMaintenant() {
   $('etat-enregistrement').textContent = 'Enregistrement du relevé…';
   var c = commun(); c.action = 'enregistrer'; c.releve = etat.releve; c.auteur = $('auteur').value.trim();
   c.confrere_nom = $('confrere-nom').value.trim(); c.confrere_adresse = $('confrere-adresse').value.trim();
+  c.tolerance = etat.releve.tolerance;
+  if (etat.suite) c.suite_de = etat.suite.id;
   if (etat.releveId) c.id = etat.releveId;
   return api(c).then(function (r) { if (r.enregistre && r.id) etat.releveId = r.id; $('etat-enregistrement').textContent = r.enregistre ? 'Relevé enregistré.' : r.motif; })
     .catch(function (x) { $('etat-enregistrement').textContent = 'Relevé non enregistré : ' + x.message; });
@@ -589,10 +778,11 @@ $('preparer-mail').addEventListener('click', function () {
   travail('LEXIO rédige le mail…');
   var c = commun(); c.action = 'mail';
   var r = etat.releve;
-  c.releve = { position: c.position, demandes: r.demandes.map(function (d) { return { n: d.n, demande: d.texte, etat: d.etat, explication: d.explication }; }),
+  c.releve = { position: c.position, demandes: r.demandes.map(function (d) { var x = { n: d.n, demande: d.texte, etat: d.etat, explication: d.explication }; if (d.deja_demande_le && d.relance > 1 && d.etat !== 'integree') { x.relance = d.relance; x.deja_demande_le = d.deja_demande_le; } return x; }),
     ajouts: r.ajouts.map(function (a) { return { objet: a.objet, explication: a.explication, profite_a: a.profite_a, inacceptable: a.couleur === 'rouge' }; }),
     chiffres: r.chiffres.filter(function (x) { return x.etat === 'ecart'; }),
     clauses: (r.clauses || []).filter(function (x) { return x.retenue; }).map(function (x) { return { objet: x.titre, constat: x.explication }; }),
+    points_obtenus_qui_reviennent: (r.obtenus || []).filter(function (o) { return o.etat === 'disparu' && o.retenue !== false; }).map(function (o) { return { objet: o.texte, obtenu_le: o.obtenu_le, constat: o.explication }; }),
     modifications_portees_dans_le_projet_joint: !!etat.annote };
   c.releve.demandes = c.releve.demandes.filter(function (d, i) { var l = r.demandes[i]; return d.etat === 'integree' || !l || l.retenue !== false; });
   api(c).then(function (m) {
@@ -616,6 +806,8 @@ $('nouvel-examen').addEventListener('click', function () {
   ['depot-obs', 'depot-projet', 'depot-prec'].forEach(function (id) { $(id)._vider(); });
   $('obs-colle').value = ''; $('dossier').value = ''; $('confrere-nom').value = ''; $('confrere-adresse').value = '';
   etat.demandes = []; etat.examen = null; etat.releve = null; etat.annote = null; etat.releveId = null; $('second').innerHTML = ''; $('annote-detail').innerHTML = ''; $('etat-annote').textContent = '';
+  etat.suite = null; etat.candidat = null; etat.profil = null; etat.obtenusEnvoyes = null; derniereCle = ''; refusees = {};
+  dessinerSuite(); dessinerProfil(); poserTolerance('normal'); $('note-tolerance').textContent = '';
   ['etape-demandes', 'etape-releve', 'etape-mail'].forEach(function (id) { $(id).hidden = true; });
   $('etat-enregistrement').textContent = ''; $('etat-mail').textContent = '';
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -627,6 +819,8 @@ $('nouvel-examen').addEventListener('click', function () {
    - référence = la CLAUSE ÉTOILE seule de chaque rubrique ; une rubrique sans étoile est « sans référence » ;
    - feu : rouge si l'écart profite à l'autre partie, vert s'il profite à notre client, orange si l'étude est
      notaire des deux parties, si l'écart est neutre ou si la clause manque ; les rouges sont cochées d'office.
+   - lot 3 : les rubriques où le confrère résiste souvent remontent en tête de liste ; en tolérance souple,
+     un écart de fond neutre passe au vert.
    ===================================================================== */
 var RELAIS = ['https://connexion-omega.vercel.app/relais.html', 'https://histo-sand.vercel.app/relais.html'];
 var relaisActif = null, relaisN = 0, relaisAttentes = {}, relaisPrets = [];
@@ -726,22 +920,23 @@ function etatSecond(texte, avecAccord) {
   z.innerHTML = ''; z.appendChild(el('span', null, texte));
   if (avecAccord) { var b = el('button', 'bouton', 'Autoriser la lecture du Drive'); b.type = 'button'; b.onclick = autoriserDrive; z.appendChild(b); }
 }
-function couleurClause(x) {
+function couleurClause(x, tol) {
   var pos = position();
   if (x.ecart === 'aucun' || x.ecart === 'forme') return 'vert';
+  if (x.ecart === 'fond' && x.profite_a === 'neutre' && tol === 'souple') return 'vert';
   if (pos === 'deux' || x.profite_a === 'neutre' || x.ecart === 'absente' && x.profite_a === 'neutre') return 'orange';
   return x.profite_a === pos ? 'vert' : 'rouge';
 }
 var ECARTS = { aucun: 'Conforme à l’étoile', forme: 'Rédaction différente, même portée', fond: 'S’écarte de l’étoile', absente: 'Absente du projet' };
 function secondPassage() {
-  var z = $('second'), type = $('type-acte').value;
+  var z = $('second'), type = $('type-acte').value, tol = (etat.releve && etat.releve.tolerance) || tolerance();
   z.innerHTML = '';
   var h = el('h3', 'bloc', 'Clauses confrontées au clausier'); h.appendChild(el('small', null, 'clause étoile de chaque rubrique, selon votre position')); z.appendChild(h);
   var ligne = el('div', 'second-etat'); ligne.id = 'second-etat'; z.appendChild(ligne);
   var liste = el('div'); liste.id = 'second-liste'; z.appendChild(liste);
   if (!PREFIXES[type]) { etatSecond('Pas de clausier MONETA pour ce type d’acte : le second passage ne porte que sur les promesses.'); majAnnote(); return Promise.resolve(); }
   etatSecond('Lecture du clausier MONETA…');
-  var etoiles;
+  var etoiles, aSurveiller = surveillees();
   return lireClausier(type).then(function (cl) {
     etoiles = cl;
     if (!cl.references.length) { etatSecond('Le clausier ne compte encore aucune clause étoile : rien à confronter (' + cl.nbRubriques + ' rubriques sans référence). Le second passage s’enrichira au fil des étoiles choisies dans MONETA.'); return []; }
@@ -751,29 +946,32 @@ function secondPassage() {
       return p.then(function () {
         etatSecond('Confrontation des clauses étoiles au projet… (' + (k + 1) + ' sur ' + lots.length + ')');
         var c = commun(); c.action = 'clausier'; c.projet = etat.projet.texte; c.references = lot;
+        c.surveiller = aSurveiller.filter(function (id) { return lot.some(function (x) { return x.id === id; }); });
         return api(c).then(function (r) { res = res.concat(r.resultats || []); });
       });
     }, Promise.resolve()).then(function () { return res; });
   }).then(function (res) {
     if (!etoiles || !etoiles.references.length) { majAnnote(); return; }
     var parId = {}; etoiles.references.forEach(function (r) { parId[r.id] = r; });
-    var clauses = res.map(function (x) { var r = parId[x.id] || {}; return { rubrique: x.id, titre: r.titre, article: r.article, etoile: r.texte, ecart: x.ecart, profite_a: x.profite_a, explication: x.explication, extrait: x.extrait }; });
-    clauses.forEach(function (x) { x.couleur = couleurClause(x); });
+    var clauses = res.map(function (x) { var r = parId[x.id] || {}; return { rubrique: x.id, titre: r.titre, article: r.article, etoile: r.texte, ecart: x.ecart, profite_a: x.profite_a, explication: x.explication, extrait: x.extrait, surveillee: aSurveiller.indexOf(x.id) >= 0 }; });
+    clauses.forEach(function (x) { x.couleur = couleurClause(x, tol); });
     var ordre = { rouge: 0, orange: 1, vert: 2 };
-    clauses.sort(function (a, b) { return ordre[a.couleur] - ordre[b.couleur]; });
+    // les rubriques où le confrère résiste souvent remontent en tête de liste (choix 3)
+    clauses.sort(function (a, b) { return ((b.surveillee && (b.ecart === 'fond' || b.ecart === 'absente')) ? 1 : 0) - ((a.surveillee && (a.ecart === 'fond' || a.ecart === 'absente')) ? 1 : 0) || ordre[a.couleur] - ordre[b.couleur]; });
     etat.releve.clauses = clauses;
     var ecarts = clauses.filter(function (x) { return x.ecart === 'fond' || x.ecart === 'absente'; });
     var rouges = clauses.filter(function (x) { return x.couleur === 'rouge'; }).length;
-    etatSecond(clauses.length + ' clause(s) étoile confrontée(s), ' + ecarts.length + ' écart(s) de fond' + (rouges ? ' dont ' + rouges + ' contre votre client' : '') + '. ' + etoiles.nbSansEtoile + ' rubrique(s) sans étoile, donc sans référence.');
-    clauses.filter(function (x) { return x.ecart === 'fond' || x.ecart === 'absente'; }).forEach(function (x, i) {
+    var sensibles = ecarts.filter(function (x) { return x.surveillee; }).length;
+    etatSecond(clauses.length + ' clause(s) étoile confrontée(s), ' + ecarts.length + ' écart(s) de fond' + (rouges ? ' dont ' + rouges + ' contre votre client' : '') + (sensibles ? ', ' + sensibles + ' sur des rubriques où ce confrère résiste souvent' : '') + '. ' + etoiles.nbSansEtoile + ' rubrique(s) sans étoile, donc sans référence.');
+    ecarts.forEach(function (x, i) {
       var lib = ECARTS[x.ecart] + (x.profite_a !== 'neutre' ? ' — profite au ' + partie(x.profite_a) : '') + (x.couleur === 'rouge' ? ', contre votre client' : '');
-      liste.appendChild(point(x.couleur, 'M' + (i + 1), lib, x.titre, x.explication, x.extrait, { objet: x, coche: x.couleur === 'rouge' }, [x.rubrique, x.article].filter(Boolean).join(' — ')));
+      liste.appendChild(point(x.couleur, 'M' + (i + 1), lib, x.titre, x.explication, x.extrait, { objet: x, coche: x.couleur === 'rouge' }, [x.rubrique, x.article].filter(Boolean).join(' — '), x.surveillee ? ['marque-surveille', 'Rubrique sensible chez ce confrère'] : null));
     });
     var conformes = clauses.filter(function (x) { return x.ecart === 'aucun' || x.ecart === 'forme'; }).length;
     if (conformes) liste.appendChild(el('p', 'bilan-clausier', conformes + ' clause(s) conformes à l’étoile, sur le fond.'));
     // feu d'ensemble : une clause rouge fait passer le relevé au rouge
     if (rouges && etat.releve.feu !== 'rouge') { etat.releve.feu = 'rouge'; var f = document.querySelector('#releve .feu'); if (f) { f.className = 'feu rouge'; f.querySelector('.mot').textContent = 'À reprendre'; } }
-    else if (!rouges && ecarts.length && etat.releve.feu === 'vert') { etat.releve.feu = 'orange'; var g = document.querySelector('#releve .feu'); if (g) { g.className = 'feu orange'; g.querySelector('.mot').textContent = 'À vérifier'; } }
+    else if (!rouges && ecarts.some(function (x) { return x.couleur !== 'vert'; }) && etat.releve.feu === 'vert') { etat.releve.feu = 'orange'; var g = document.querySelector('#releve .feu'); if (g) { g.className = 'feu orange'; g.querySelector('.mot').textContent = 'À vérifier'; } }
     enregistrer();
     majAnnote();
   }).catch(function (e) {
@@ -788,7 +986,8 @@ function pointsRetenus() {
   var r = etat.releve; if (!r) return [];
   var l = [];
   r.demandes.forEach(function (d) { if (d.etat !== 'integree' && d.retenue) l.push({ id: 'D' + d.n, genre: 'demande', texte: d.texte, explication: d.explication }); });
-  (r.clauses || []).forEach(function (x, i) { if (x.retenue) l.push({ id: 'M' + (i + 1), genre: 'clause', texte: x.titre, explication: x.explication, etoile: x.etoile }); });
+  (r.obtenus || []).forEach(function (o) { if (o.etat !== 'maintenu' && o.retenue) l.push({ id: 'O' + o.n, genre: 'demande', texte: o.texte + ' (point obtenu le ' + o.obtenu_le + ', à rétablir)', explication: o.explication }); });
+  (r.clauses || []).filter(function (x) { return x.ecart === 'fond' || x.ecart === 'absente'; }).forEach(function (x, i) { if (x.retenue) l.push({ id: 'M' + (i + 1), genre: 'clause', texte: x.titre, explication: x.explication, etoile: x.etoile }); });
   return l;
 }
 function majAnnote() {
@@ -832,6 +1031,7 @@ $('preparer-annote').addEventListener('click', function () {
   }).catch(function (x) { $('erreur-releve').textContent = x.message; }).then(finTravail);
 });
 verifierDepot();
+consulterHistorique();
 </script>
 </body>
 </html>
