@@ -1,22 +1,29 @@
-/* LEXIO 2.0 — fonction serveur unique (plafond de douze fonctions du plan Hobby : tout passe par ici).
+/* LEXIO 3.0 — fonction serveur unique (plafond de douze fonctions du plan Hobby : tout passe par ici).
    Actions (POST, JSON, en-tête x-lexio-code) :
      verifier     contrôle du code d'accès
+     historique   (lot 3) examen précédent du même dossier chez le même confrère + profil des habitudes du confrère
+     suite        (lot 3) historique d'un dossier confirmé : demandes restées sans suite, points déjà obtenus, tolérance retenue
      demandes     relève la liste des demandes dans les observations de l'étude
-     examen       premier passage : verdict demande par demande, ajouts non demandés, concordance des chiffres
+     examen       premier passage : verdict demande par demande, ajouts non demandés, concordance des chiffres,
+                  et (lot 3) revérification des points obtenus lors des examens précédents
      clausier     second passage (lot 2) : chaque clause étoile de MONETA confrontée au projet du confrère
      redaction    texte des modifications à porter en suivi des révisions dans le Word du confrère (lot 2)
      mail         prépare le mail de retour au confrère (synthèse seule : JFD l'envoie lui-même depuis sa messagerie)
      enregistrer  range le relevé de l'examen dans Neon (jamais le texte des actes)
    Variables Vercel : LEXIO_CODE (code d'accès du cabinet), ANTHROPIC_API_KEY, DATABASE_URL,
-   LEXIO_MODELE (facultative, modèle Claude). */
+   LEXIO_MODELE (facultative, modèle Claude).
+   Lot 3 (arbitrages du 27/10/2026) : dossier reconnu par son intitulé et l'adresse du confrère, confirmé d'un clic ;
+   historique utilisé dans le contrôle ; profil du confrère affiché au dépôt ; tolérance à trois crans retenue par dossier.
+   Il demande le script sql/lexio-3.sql (colonnes suite_de, tolerance, obtenus). */
 'use strict';
 
 const crypto = require('crypto');
 
-const VERSION = '2.0';
+const VERSION = '3.0';
 const MODELE = process.env.LEXIO_MODELE || 'claude-sonnet-5-5';
 const MAX_TEXTE = 900000;           // signes acceptés par pièce
 const POSITIONS = ['vendeur', 'acquereur', 'deux'];
+const TOLERANCES = ['souple', 'normal', 'strict'];
 
 /* ---------- utilitaires ---------- */
 function egal(a, b) {
@@ -26,6 +33,7 @@ function egal(a, b) {
 }
 function texte(v, max) { return String(v == null ? '' : v).slice(0, max || MAX_TEXTE); }
 function attendre(ms) { return new Promise(r => setTimeout(r, ms)); }
+function tolerance(v) { return TOLERANCES.includes(v) ? v : 'normal'; }
 
 function libellesParties(typeActe) {
   return typeActe === 'puv'
@@ -91,28 +99,38 @@ async function examen(c) {
   const projet = texte(c.projet);
   if (projet.trim().length < 200) { const e = new Error('Projet vide ou illisible.'); e.statut = 400; throw e; }
   const liste = (Array.isArray(c.demandes) ? c.demandes : []).map((d, i) => (i + 1) + '. ' + texte(d.texte || d, 1000) + (d.clause ? ' (' + texte(d.clause, 200) + ')' : '')).join('\n');
+  const obtenus = (Array.isArray(c.obtenus) ? c.obtenus : []).slice(0, 60).map(o => texte(o && o.texte != null ? o.texte : o, 1000).trim()).filter(Boolean);
   const precedente = texte(c.precedente);
+  const strict = tolerance(c.tolerance) === 'strict', souple = tolerance(c.tolerance) === 'souple';
   const sys = 'Tu assistes un notaire qui reçoit du notaire confrère une nouvelle version d’un projet de ' + libelleType(c.type_acte) + '. ' +
     client(c.position, c.type_acte) + '\n' +
     'Tâche 1 — pour CHAQUE demande numérotée de l’étude, dis si le nouveau projet l’intègre : "integree" (entièrement), "partielle" (en partie ou autrement que demandé), "oubliee" (rien n’a changé sur ce point), "incertaine" (impossible à dire). ' +
     'Explique en une ou deux phrases, et cite le passage du projet qui fonde ton avis (moins de 300 signes, mot pour mot), sinon chaîne vide.\n' +
     'Tâche 2 — relève les AJOUTS OU MODIFICATIONS NON DEMANDÉS : ' +
     (precedente ? 'compare le projet à la version précédente fournie ; ' : 'appuie-toi sur les modifications suivies (marques ⟦ajouté⟧ / ⟦supprimé⟧) et sur ce que les observations permettent de savoir de la version précédente ; ne déclare rien que tu ne puisses établir ; ') +
-    'ignore les corrections de pure forme. Pour chacun, dis à qui il profite : "vendeur", "acquereur" ou "neutre" (en promesse unilatérale, "vendeur" = promettant, "acquereur" = bénéficiaire).\n' +
+    (strict ? 'relève-les tous, même de faible portée, en ignorant seulement les corrections de pure forme (ponctuation, coquilles). '
+      : souple ? 'ignore les corrections de pure forme et les retouches de rédaction sans effet juridique ; ne relève que ce qui change une portée, un délai, un montant, une condition, une garantie ou une charge. '
+      : 'ignore les corrections de pure forme. ') +
+    'Pour chacun, dis à qui il profite : "vendeur", "acquereur" ou "neutre" (en promesse unilatérale, "vendeur" = promettant, "acquereur" = bénéficiaire).\n' +
     'Tâche 3 — CONCORDANCE DES CHIFFRES : vérifie que prix, indemnité d’immobilisation, dépôt de garantie, commission, surfaces, dates et délais sont cohérents d’un endroit à l’autre du projet (chiffres et lettres compris) et avec ce que demandent les observations. Ne liste que les montants et dates importants ; "concorde" ou "ecart".\n' +
+    (obtenus.length ? 'Tâche 4 — POINTS DÉJÀ OBTENUS lors des versions précédentes (numérotés O1, O2…) : pour CHACUN, dis s’il figure toujours dans le nouveau projet : "maintenu", "disparu" (supprimé ou vidé de sa portée), "incertain". Explique en une phrase et cite le passage, mot pour mot, moins de 300 signes, sinon chaîne vide.\n' : '') +
     'Termine par une synthèse de trois phrases au plus, du point de vue de l’étude.\n' + CADRE + '\n' +
     'Format : {"verdicts":[{"n":1,"etat":"integree|partielle|oubliee|incertaine","explication":"…","extrait":"…"}],' +
     '"ajouts":[{"objet":"…","explication":"…","extrait":"…","profite_a":"vendeur|acquereur|neutre"}],' +
-    '"chiffres":[{"objet":"…","valeurs":"…","etat":"concorde|ecart","explication":"…"}],"synthese":"…"}';
-  let contenu = 'DEMANDES DE L’ÉTUDE :\n' + liste + '\n\nOBSERVATIONS D’ORIGINE (contexte) :\n' + texte(c.observations, 60000) +
-    '\n\nNOUVEAU PROJET DU CONFRÈRE :\n' + projet;
+    '"chiffres":[{"objet":"…","valeurs":"…","etat":"concorde|ecart","explication":"…"}],' +
+    (obtenus.length ? '"obtenus":[{"n":1,"etat":"maintenu|disparu|incertain","explication":"…","extrait":"…"}],' : '') + '"synthese":"…"}';
+  let contenu = 'DEMANDES DE L’ÉTUDE :\n' + liste + '\n\nOBSERVATIONS D’ORIGINE (contexte) :\n' + texte(c.observations, 60000);
+  if (obtenus.length) contenu += '\n\nPOINTS DÉJÀ OBTENUS LORS DES VERSIONS PRÉCÉDENTES :\n' + obtenus.map((o, i) => 'O' + (i + 1) + '. ' + o).join('\n');
+  contenu += '\n\nNOUVEAU PROJET DU CONFRÈRE :\n' + projet;
   if (precedente) contenu += '\n\nVERSION PRÉCÉDENTE DU PROJET :\n' + precedente;
-  const r = json(await claude(sys, contenu, 12000));
-  const ETATS = ['integree', 'partielle', 'oubliee', 'incertaine'], PROFITS = ['vendeur', 'acquereur', 'neutre'];
+  const r = json(await claude(sys, contenu, 14000));
+  const ETATS = ['integree', 'partielle', 'oubliee', 'incertaine'], PROFITS = ['vendeur', 'acquereur', 'neutre'], OBT = ['maintenu', 'disparu', 'incertain'];
   return {
     verdicts: (r.verdicts || []).map(v => ({ n: +v.n || 0, etat: ETATS.includes(v.etat) ? v.etat : 'incertaine', explication: texte(v.explication, 1200), extrait: texte(v.extrait, 400) })),
     ajouts: (r.ajouts || []).map(a => ({ objet: texte(a.objet, 300), explication: texte(a.explication, 1200), extrait: texte(a.extrait, 400), profite_a: PROFITS.includes(a.profite_a) ? a.profite_a : 'neutre' })),
     chiffres: (r.chiffres || []).map(x => ({ objet: texte(x.objet, 200), valeurs: texte(x.valeurs, 400), etat: x.etat === 'ecart' ? 'ecart' : 'concorde', explication: texte(x.explication, 800) })),
+    obtenus: obtenus.length ? (r.obtenus || []).map(o => ({ n: +String(o.n).replace(/\D/g, '') || 0, etat: OBT.includes(o.etat) ? o.etat : 'incertain', explication: texte(o.explication, 1200), extrait: texte(o.extrait, 400) }))
+      .filter(o => o.n >= 1 && o.n <= obtenus.length) : [],
     synthese: texte(r.synthese, 1500)
   };
 }
@@ -120,7 +138,8 @@ async function examen(c) {
 /* ---------- second passage : le clausier MONETA (lot 2, arbitrages du 27/10/2026) ----------
    Référence = la CLAUSE ÉTOILE seule de chaque rubrique (choisie à la main dans MONETA) ; une rubrique sans étoile
    n'est pas envoyée ici. Le modèle dit, pour chaque étoile, où le projet traite le même objet, si la rédaction
-   s'en écarte sur le fond, et à qui l'écart profite. Le feu est posé par la page selon la position de l'étude. */
+   s'en écarte sur le fond, et à qui l'écart profite. Le feu est posé par la page selon la position de l'étude.
+   Lot 3 : les rubriques où le confrère résiste souvent (champ « surveiller ») sont examinées de plus près. */
 const SENS_LIB = { equilibree: 'équilibrée', vendeur: 'pro-vendeur', acquereur: 'pro-acquéreur' };
 async function clausier(c) {
   const projet = texte(c.projet);
@@ -129,6 +148,7 @@ async function clausier(c) {
     .map(r => ({ id: texte(r.id, 40), titre: texte(r.titre, 200), article: texte(r.article, 200), sens: SENS_LIB[r.sens] ? r.sens : '', texte: texte(r.texte, 6000) }))
     .filter(r => r.id && r.texte.trim());
   if (!refs.length) return { resultats: [] };
+  const surveiller = new Set((Array.isArray(c.surveiller) ? c.surveiller : []).map(x => texte(x, 40)));
   const puv = c.type_acte === 'puv';
   const sys = 'Tu assistes un notaire. On te remet le projet d’un notaire confrère (' + libelleType(c.type_acte) + ') et, rubrique par rubrique, ' +
     'la CLAUSE ÉTOILE de son clausier : la rédaction de référence de l’étude, neutralisée (les éléments propres à un dossier sont entre crochets, par exemple [PRIX] ou [DATE]). ' +
@@ -138,9 +158,11 @@ async function clausier(c) {
     '3) pour un écart de fond ou une absence, dis à qui il profite par rapport à l’étoile : "vendeur", "acquereur" ou "neutre"' + (puv ? ' (ici "vendeur" = promettant, "acquereur" = bénéficiaire)' : '') + ', ' +
     'en tenant compte de l’étiquette de l’étoile (une étoile pro-vendeur ramenée à l’équilibre profite à l’acquéreur) ; ' +
     '4) explique l’écart en une ou deux phrases précises (sans recopier la clause) ; 5) cite le passage du projet, mot pour mot, moins de 300 signes. ' +
-    'Les éléments entre crochets de l’étoile ne sont jamais des écarts. ' + CADRE + '\n' +
+    'Les éléments entre crochets de l’étoile ne sont jamais des écarts. ' +
+    (surveiller.size ? 'Les rubriques marquées [à surveiller] sont celles où ce confrère résiste souvent : lis-les mot à mot et ne qualifie un écart de "forme" que si l’effet juridique est strictement identique. ' : '') +
+    CADRE + '\n' +
     'Format : {"resultats":[{"id":"…","ecart":"aucun|forme|fond|absente","profite_a":"vendeur|acquereur|neutre","explication":"…","extrait":"…"}]}';
-  const contenu = 'CLAUSES ÉTOILES DU CLAUSIER :\n' + refs.map(r => '— [' + r.id + '] ' + (r.article ? r.article + ' — ' : '') + r.titre +
+  const contenu = 'CLAUSES ÉTOILES DU CLAUSIER :\n' + refs.map(r => '— [' + r.id + ']' + (surveiller.has(r.id) ? ' [à surveiller]' : '') + ' ' + (r.article ? r.article + ' — ' : '') + r.titre +
     (r.sens ? ' (étiquette : ' + SENS_LIB[r.sens] + ')' : ' (non qualifiée)') + '\n' + r.texte).join('\n\n') + '\n\nPROJET DU CONFRÈRE :\n' + projet;
   const r = json(await claude(sys, contenu, 8000));
   const ECARTS = ['aucun', 'forme', 'fond', 'absente'], PROFITS = ['vendeur', 'acquereur', 'neutre'], connus = new Set(refs.map(x => x.id));
@@ -196,6 +218,8 @@ async function mail(c) {
     'Remercie brièvement pour la nouvelle version ; donne ensuite, numérotée, la SYNTHÈSE des points restant à reprendre : demandes oubliées ou partiellement intégrées, ' +
     'clauses du projet que l’étude ne peut accepter, ajouts non demandés refusés, écarts de chiffres. Une ligne courte par point, qui dit l’objet et le sens de la demande : ' +
     'NE RECOPIE JAMAIS LE TEXTE D’UNE CLAUSE et ne propose pas de rédaction dans le mail. Ne mentionne pas les points correctement intégrés un par un. ' +
+    'Quand une demande porte un rang de relance (champ "relance" : 2 pour une deuxième relance, 3 pour une troisième…), signale-le sur la même ligne, entre parenthèses, en une seule fois : « (deuxième relance) », « (troisième relance) ». ' +
+    'Les points obtenus lors d’une version précédente qui ont disparu du nouveau projet (champ "points_obtenus_qui_reviennent") sont à rétablir : dis-le sobrement sur leur ligne (« point acquis lors de la version précédente, à rétablir »). ' +
     'Si le relevé indique que les modifications sont portées dans le projet joint, dis-le en une phrase (« Vous trouverez nos modifications en suivi des révisions dans le projet joint. »). ' +
     'Termine par une phrase demandant une version mise à jour et par « Bien à vous, » — sans signature (la messagerie l’ajoute). ' +
     'Si tout est intégré et qu’aucun point ne reste, rédige un court mail d’accord. ' + CADRE +
@@ -206,19 +230,164 @@ async function mail(c) {
 }
 
 /* ---------- Neon ---------- */
-async function enregistrer(c) {
-  if (!process.env.DATABASE_URL) return { enregistre: false, motif: 'Base non branchée (variable DATABASE_URL absente).' };
+function base() {
+  if (!process.env.DATABASE_URL) return null;
   const { neon } = require('@neondatabase/serverless');
-  const sql = neon(process.env.DATABASE_URL);
+  return neon(process.env.DATABASE_URL);
+}
+async function avecReprise(f) {
+  let derniere;
+  for (let essai = 0; essai < 2; essai++) {
+    try { return await f(); } catch (e) { derniere = e; if (essai === 0) await attendre(800); }
+  }
+  throw derniere;
+}
+
+/* rapprochement des intitulés et des demandes : minuscules, sans accents, sans ponctuation */
+function normal(t) {
+  return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+const MOTS_VIDES = new Set(['de', 'du', 'des', 'la', 'le', 'les', 'l', 'd', 'et', 'a', 'au', 'aux', 'en', 'sur', 'pour', 'projet', 'promesse', 'vente', 'compromis', 'acte',
+  'puv', 'psv', 'sci', 'sas', 'sarl', 'sa', 're', 'tr', 'fw', 'fwd', 'version', 'v', 'nouvelle', 'nouveau', 'observations', 'unilaterale', 'synallagmatique']);
+function mots(t) { return normal(t).split(' ').filter(m => m.length >= 2 && !MOTS_VIDES.has(m) && !/^\d{1,2}$/.test(m)); }
+/* deux intitulés désignent le même dossier quand l'essentiel des mots du plus court se retrouve dans l'autre */
+function memeDossier(a, b) {
+  const x = new Set(mots(a)), y = new Set(mots(b));
+  if (!x.size || !y.size) return 0;
+  let commun = 0; x.forEach(m => { if (y.has(m)) commun++; });
+  return commun / Math.min(x.size, y.size);
+}
+function cleDemande(t) { return normal(t).slice(0, 400); }
+function dateFr(d) { try { return new Date(d).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' }); } catch (e) { return ''; } }
+
+/* PROFIL DU CONFRÈRE (choix 3) : calculé sur les seuls relevés, jamais sur le texte des actes.
+   - part des demandes reprises dès la première version : examens qui ouvrent un dossier (sans « suite_de ») ;
+   - rubriques où il résiste : rubriques du clausier en écart de fond (ou absentes) contre l'étude, dans au moins deux examens. */
+function profil(lignes, nom) {
+  const premiers = lignes.filter(l => !l.suite_de);
+  let total = 0, reprises = 0;
+  premiers.forEach(l => (l.demandes || []).forEach(d => { if (d.etat === 'incertaine') return; total++; if (d.etat === 'integree') reprises++; }));
+  const parRubrique = {};
+  lignes.forEach(l => {
+    const vues = new Set();
+    (l.clauses || []).forEach(x => {
+      if (!x.rubrique || vues.has(x.rubrique)) return;
+      if (!(x.couleur === 'rouge' || ((x.ecart === 'fond' || x.ecart === 'absente') && l.position === 'deux'))) return;
+      vues.add(x.rubrique);
+      const r = parRubrique[x.rubrique] || (parRubrique[x.rubrique] = { rubrique: x.rubrique, titre: x.titre || '', fois: 0 });
+      r.fois++; if (x.titre) r.titre = x.titre;
+    });
+  });
+  const resistances = Object.values(parRubrique).filter(r => r.fois >= 2).sort((a, b) => b.fois - a.fois).slice(0, 8);
+  const dossiers = [];   // intitulés regroupés par ressemblance : « VENTE DURAND » et « Promesse Durand » font un seul dossier
+  lignes.forEach(l => { if (!dossiers.some(d => memeDossier(d, l.dossier) >= 0.6)) dossiers.push(l.dossier || ''); });
+  return {
+    nom: nom || (lignes[0] && lignes[0].confrere_nom) || '',
+    nb_examens: lignes.length,
+    nb_dossiers: dossiers.length,
+    premier: lignes.length ? dateFr(lignes[lignes.length - 1].cree_le) : '',
+    dernier: lignes.length ? dateFr(lignes[0].cree_le) : '',
+    demandes_premiere_version: total,
+    reprises_premiere_version: reprises,
+    taux_premiere_version: total ? Math.round(100 * reprises / total) : null,
+    resistances
+  };
+}
+
+/* HISTORIQUE (choix 1) : examen précédent du même dossier chez le même confrère, à confirmer d'un clic. */
+async function historique(c) {
+  const sql = base();
+  if (!sql) return { base: false, candidat: null, profil: null };
+  const adresse = texte(c.confrere_adresse, 200).toLowerCase().trim();
+  if (!adresse) return { base: true, candidat: null, profil: null };
+  const lignes = await avecReprise(() => sql`SELECT id, cree_le, dossier, type_acte, position, confrere_nom, feu, demandes, clauses, suite_de, tolerance
+      FROM lexio_examen WHERE confrere_adresse = ${adresse} ORDER BY cree_le DESC LIMIT 300`);
+  const conf = await avecReprise(() => sql`SELECT nom FROM lexio_confrere WHERE adresse = ${adresse}`);
+  let candidat = null;
+  const dossier = texte(c.dossier, 200);
+  if (dossier.trim()) {
+    for (const l of lignes) {
+      if (+l.id === +c.exclure) continue;
+      const s = memeDossier(dossier, l.dossier);
+      if (s >= 0.6) {
+        const nbExamens = 1 + lignes.filter(x => x.id !== l.id && memeDossier(l.dossier, x.dossier) >= 0.6).length;
+        candidat = { id: l.id, date: dateFr(l.cree_le), dossier: l.dossier || '', feu: l.feu || '', tolerance: tolerance(l.tolerance), nb_examens: nbExamens, ressemblance: Math.round(s * 100) };
+        break;
+      }
+    }
+  }
+  return { base: true, candidat, profil: lignes.length ? profil(lignes, conf[0] && conf[0].nom) : null };
+}
+
+/* SUITE (choix 2) : on remonte la chaîne des examens du dossier, du plus ancien au plus récent ;
+   pour chaque demande, c'est son dernier état connu qui compte.
+   - restée oubliée ou partielle → reprise d'office (« déjà demandé le … », rang de relance) ;
+   - intégrée → point obtenu, à revérifier dans la nouvelle version ;
+   - un point obtenu qui avait disparu redevient une demande à reprendre. */
+async function suite(c) {
+  const sql = base();
+  if (!sql) { const e = new Error('Base non branchée (variable DATABASE_URL absente).'); e.statut = 503; throw e; }
+  const chaine = [];
+  let id = +c.id || 0;
+  const vus = new Set();
+  while (id && !vus.has(id) && chaine.length < 30) {
+    vus.add(id);
+    const r = await avecReprise(() => sql`SELECT id, cree_le, dossier, feu, demandes, obtenus, suite_de, tolerance FROM lexio_examen WHERE id = ${id}`);
+    if (!r.length) break;
+    chaine.unshift(r[0]);
+    id = +r[0].suite_de || 0;
+  }
+  if (!chaine.length) { const e = new Error('Examen précédent introuvable.'); e.statut = 404; throw e; }
+  const etats = new Map();   // clé → { texte, clause, premier, fois, etat, obtenu_le }
+  chaine.forEach(ex => {
+    const le = dateFr(ex.cree_le);
+    (ex.demandes || []).forEach(d => {
+      const k = cleDemande(d.texte); if (!k) return;
+      const e = etats.get(k) || { texte: d.texte, clause: d.clause || '', premier: le, fois: 0, etat: '', obtenu_le: '' };
+      e.texte = d.texte; e.etat = d.etat;
+      if (d.etat === 'oubliee' || d.etat === 'partielle') e.fois++;
+      if (d.etat === 'integree' && !e.obtenu_le) e.obtenu_le = le;
+      etats.set(k, e);
+    });
+    (ex.obtenus || []).forEach(o => {
+      const k = cleDemande(o.texte); if (!k) return;
+      const e = etats.get(k) || { texte: o.texte, clause: '', premier: o.obtenu_le || le, fois: 0, etat: 'integree', obtenu_le: o.obtenu_le || le };
+      if (o.etat === 'disparu') { e.etat = 'oubliee'; e.fois++; e.revenu = true; }
+      else if (o.etat === 'maintenu') { e.etat = 'integree'; if (!e.obtenu_le) e.obtenu_le = o.obtenu_le || le; }
+      etats.set(k, e);
+    });
+  });
+  const relances = [], obtenus = [];
+  etats.forEach(e => {
+    if (e.etat === 'oubliee' || e.etat === 'partielle') relances.push({ texte: e.texte, clause: e.clause, deja_demande_le: e.premier, relance: e.fois + 1, point_revenu: !!e.revenu });
+    else if (e.etat === 'integree') obtenus.push({ texte: e.texte, obtenu_le: e.obtenu_le || e.premier });
+  });
+  const dernier = chaine[chaine.length - 1];
+  return {
+    id: dernier.id,
+    dossier: dernier.dossier || '',
+    tolerance: tolerance(dernier.tolerance),
+    examens: chaine.map(x => ({ id: x.id, date: dateFr(x.cree_le), feu: x.feu || '' })),
+    relances: relances.slice(0, 60),
+    obtenus: obtenus.slice(0, 60)
+  };
+}
+
+async function enregistrer(c) {
+  const sql = base();
+  if (!sql) return { enregistre: false, motif: 'Base non branchée (variable DATABASE_URL absente).' };
   const r = c.releve || {};
   // le relevé ne garde jamais le texte des actes : les extraits cités sont retirés ici
-  const dem = (r.demandes || []).map(d => ({ n: +d.n || 0, texte: texte(d.texte, 1000), etat: texte(d.etat, 20), explication: texte(d.explication, 1200) }));
+  const dem = (r.demandes || []).map(d => ({ n: +d.n || 0, texte: texte(d.texte, 1000), clause: texte(d.clause, 200), etat: texte(d.etat, 20), explication: texte(d.explication, 1200),
+    deja_demande_le: texte(d.deja_demande_le, 12), relance: +d.relance || 0 }));
   const ajo = (r.ajouts || []).map(a => ({ objet: texte(a.objet, 300), profite_a: texte(a.profite_a, 20), couleur: texte(a.couleur, 10) }));
   const chi = (r.chiffres || []).map(x => ({ objet: texte(x.objet, 200), etat: texte(x.etat, 20) }));
   const cla = (r.clauses || []).map(x => ({ rubrique: texte(x.rubrique, 40), titre: texte(x.titre, 200), ecart: texte(x.ecart, 10), profite_a: texte(x.profite_a, 12), couleur: texte(x.couleur, 10), retenue: !!x.retenue }));
+  const obt = (r.obtenus || []).map(o => ({ texte: texte(o.texte, 1000), etat: texte(o.etat, 12), obtenu_le: texte(o.obtenu_le, 12) }));
   const nb = e => dem.filter(d => d.etat === e).length;
   const defav = ajo.filter(a => a.couleur === 'rouge').length;
   const adresse = texte(c.confrere_adresse, 200).toLowerCase().trim();
+  const suiteDe = +c.suite_de || null, tol = tolerance(c.tolerance || r.tolerance);
   let essai = 0, derniere;
   while (essai < 2) {
     try {
@@ -228,10 +397,10 @@ async function enregistrer(c) {
             nb_clauses_rouges = ${cla.filter(x => x.couleur === 'rouge').length} WHERE id = ${id} RETURNING id`;
         if (m.length) return { enregistre: true, id };
       }
-      const lignes = await sql`INSERT INTO lexio_examen (dossier, type_acte, position, confrere_nom, confrere_adresse, auteur, feu, demandes, ajouts, chiffres, nb_integrees, nb_partielles, nb_oubliees, nb_ajouts_defavorables, clauses, nb_clauses_rouges)
+      const lignes = await sql`INSERT INTO lexio_examen (dossier, type_acte, position, confrere_nom, confrere_adresse, auteur, feu, demandes, ajouts, chiffres, nb_integrees, nb_partielles, nb_oubliees, nb_ajouts_defavorables, clauses, nb_clauses_rouges, suite_de, tolerance, obtenus)
         VALUES (${texte(c.dossier, 200)}, ${texte(c.type_acte, 10)}, ${texte(c.position, 10)}, ${texte(c.confrere_nom, 200)}, ${adresse}, ${texte(c.auteur, 100)}, ${texte(r.feu, 10)},
           ${JSON.stringify(dem)}::jsonb, ${JSON.stringify(ajo)}::jsonb, ${JSON.stringify(chi)}::jsonb, ${nb('integree')}, ${nb('partielle')}, ${nb('oubliee')}, ${defav},
-          ${JSON.stringify(cla)}::jsonb, ${cla.filter(x => x.couleur === 'rouge').length})
+          ${JSON.stringify(cla)}::jsonb, ${cla.filter(x => x.couleur === 'rouge').length}, ${suiteDe}, ${tol}, ${JSON.stringify(obt)}::jsonb)
         RETURNING id`;
       if (adresse) {
         await sql`INSERT INTO lexio_confrere (adresse, nom, premier_examen, dernier_examen, nb_examens, nb_oublis, nb_ajouts_defavorables)
@@ -243,7 +412,10 @@ async function enregistrer(c) {
       return { enregistre: true, id: lignes[0] && lignes[0].id };
     } catch (e) { derniere = e; essai++; if (essai < 2) await attendre(800); }
   }
-  return { enregistre: false, motif: 'Base injoignable : le relevé n’a pas été gardé (' + String(derniere && derniere.message || '').slice(0, 160) + ').' };
+  const message = String(derniere && derniere.message || '');
+  if (/suite_de|tolerance|obtenus/.test(message) && /column/.test(message))
+    return { enregistre: false, motif: 'Base à mettre à niveau : exécutez une fois sql/lexio-3.sql dans Neon.' };
+  return { enregistre: false, motif: 'Base injoignable : le relevé n’a pas été gardé (' + message.slice(0, 160) + ').' };
 }
 
 /* ---------- aiguillage ---------- */
@@ -260,6 +432,8 @@ module.exports = async function (req, res) {
   try {
     switch (c.action) {
       case 'verifier': return res.status(200).json({ ok: true, version: VERSION });
+      case 'historique': return res.status(200).json(await historique(c));
+      case 'suite': return res.status(200).json(await suite(c));
       case 'demandes': return res.status(200).json(await demandes(c));
       case 'examen': return res.status(200).json(await examen(c));
       case 'clausier': return res.status(200).json(await clausier(c));
@@ -269,7 +443,9 @@ module.exports = async function (req, res) {
       default: return res.status(400).json({ erreur: 'Action inconnue.' });
     }
   } catch (e) {
-    return res.status(e.statut || 500).json({ erreur: e.statut ? e.message : 'Erreur interne : ' + String(e.message || e).slice(0, 200) });
+    const m = String(e && e.message || e);
+    if (/suite_de|tolerance|obtenus/.test(m) && /column/.test(m)) return res.status(503).json({ erreur: 'Base à mettre à niveau : exécutez une fois sql/lexio-3.sql dans Neon.' });
+    return res.status(e.statut || 500).json({ erreur: e.statut ? e.message : 'Erreur interne : ' + m.slice(0, 200) });
   }
 };
-module.exports._interne = { demandes, examen, clausier, redaction, mail, enregistrer, json, libellesParties };
+module.exports._interne = { demandes, examen, clausier, redaction, mail, enregistrer, historique, suite, profil, memeDossier, normal, json, libellesParties };
